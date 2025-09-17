@@ -16,19 +16,20 @@ concurrency:
 
 jobs:
   deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     env:
-      VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
-      VITE_SHEETS_SPREADSHEET_ID: ${{ secrets.VITE_SHEETS_SPREADSHEET_ID }}
+      VITE_GOOGLE_CLIENT_ID:        ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+      VITE_PROG_SHEET_ID:           ${{ secrets.VITE_PROG_SHEET_ID }}
+      VITE_PROG_SHEET_TAB:          ${{ secrets.VITE_PROG_SHEET_TAB }}
+      VITE_N3_SHEET_ID:             ${{ secrets.VITE_N3_SHEET_ID }}
+      VITE_N3_SHEET_TAB:            ${{ secrets.VITE_N3_SHEET_TAB }}
+      VITE_DRIVE_PARENT_ID:         ${{ secrets.VITE_DRIVE_PARENT_ID }}
+      VITE_DRIVE_ROOT_LABEL:        ${{ secrets.VITE_DRIVE_ROOT_LABEL }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with: { node-version: lts/*, cache: 'npm' }
-      - name: Install deps
-        run: |
+      - run: |
           if [ -f package-lock.json ]; then npm ci; else npm install; fi
       - run: npm run build
       - run: cp dist/index.html dist/404.html
@@ -38,4 +39,5 @@ jobs:
         with: { path: dist }
       - id: deployment
         uses: actions/deploy-pages@v4
+
 

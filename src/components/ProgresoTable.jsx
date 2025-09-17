@@ -3,7 +3,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import { RefreshCcw, Pencil, Save, X, XCircle, ChevronDown, ChevronRight } from "lucide-react";
 import { hasGoogle, initTokenClient, ensureToken, isSignedIn } from "../lib/googleAuth";
 
-const SHEET_ID  = import.meta.env.VITE_PROG_SHEET_ID;
+const SHEET_ID  =
+import.meta.env.VITE_PROG_SHEET_ID
+import.meta.env.VITE_SHEETS_SPREADSHEET_ID; // fallback al ID general
 const SHEET_TAB = import.meta.env.VITE_PROG_SHEET_TAB || "Master";
 const API = "https://sheets.googleapis.com/v4/spreadsheets";
 
@@ -444,10 +446,10 @@ export default function ProgresoTable() {
   const selectedRow = useMemo(() => rows.find(x => x.id === selectedId) || null, [rows, selectedId]);
 
   // UI
-  if (!SHEET_ID) {
-    return <div className="rounded-2xl border-2 border-[#fd006e] p-4 bg-white text-[#fd006e]">
-      Falta configurar <code>VITE_PROG_SHEET_ID</code> en tu <code>.env</code>.
-    </div>;
+ if (!SHEET_ID) {
+   return <div className="rounded-2xl border-2 border-[#fd006e] p-4 bg-white text-[#fd006e]">
+     Falta configurar <code>VITE_PROG_SHEET_ID</code> o <code>VITE_SHEETS_SPREADSHEET_ID</code>.
+   </div>;
   }
   if (!ready) {
     return <div className="rounded-2xl border-2 border-[#398FFF] p-6 bg-white">
