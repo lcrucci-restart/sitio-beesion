@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { ensureToken, getUserInfo, requestWriteScopes, revokeToken, hasGoogle } from "../lib/googleAuth";
 
-const REQUIRED_DOMAIN = "tu-dominio.com"; // <-- cámbialo por el tuyo (p.ej. beesion.com)
+const REQUIRED_DOMAIN = "iplan.com.ar"; // <-- cámbialo por el tuyo (p.ej. beesion.com)
 
 export default function AuthGate({ children }) {
   const [state, setState] = useState({ status: "boot" }); // boot|loading|denied|ready
