@@ -25,6 +25,7 @@ jobs:
       VITE_N3_SHEET_TAB:            ${{ secrets.VITE_N3_SHEET_TAB }}
       VITE_DRIVE_PARENT_ID:         ${{ secrets.VITE_DRIVE_PARENT_ID }}
       VITE_DRIVE_ROOT_LABEL:        ${{ secrets.VITE_DRIVE_ROOT_LABEL }}
+      VITE_ALLOWED_DOMAINS:         ${{ secrets.VITE_ALLOWED_DOMAINS }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
@@ -33,6 +34,7 @@ jobs:
           if [ -f package-lock.json ]; then npm ci; else npm install; fi
       - run: npm run build
       - run: cp dist/index.html dist/404.html
+      - run: touch dist/.nojekyll
       - uses: actions/configure-pages@v5
         with: { enablement: true }
       - uses: actions/upload-pages-artifact@v4
