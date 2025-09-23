@@ -1,84 +1,114 @@
 import React, { useEffect, useState } from "react";
 import { ensureToken, getUserInfo, requestWriteScopes, revokeToken, hasGoogle } from "../lib/googleAuth";
 
-const REQUIRED_DOMAIN = "iplan.com.ar"; // <-- cámbialo por el tuyo (p.ej. beesion.com)
+// Dominios permitidos (agregá/quitá los que quieras)
+export const ALLOWED_DOMAINS = [
+  "iplan.com.ar",
+  "restart-ai.com",
+];
+
+// extrae el dominio del email
+export function emailToDomain(email) {
+  return (email.split("@").pop() || "").toLowerCase();
+}
+
+// true si el dominio del email es igual o subdominio de alguno permitido
+export function isDomainAllowed(email) {
+  const d = emailToDomain(email);
+  return ALLOWED_DOMAINS.some(ad => d === ad || d.endsWith("." + ad));
+}
+
+// ---- Si usás login de Google (ID token) ----
+
+// tiny JWT decoder (sin libs)
+export function decodeJwt(token) {
+  const b64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+  const json = decodeURIComponent(
+    atob(b64).split("").map(c => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2)).join("")
+  );
+  return JSON.parse(json);
+}
+
+// Acepta si el email verificado pertenece a dom permitido,
+// o si el claim `hd` coincide con alguno permitido
+export function isAllowedFromGoogleIdToken(idToken) {
+  const p = decodeJwt(idToken);
+  const email = p && p.email;
+  const verified = !!(p && p.email_verified);
+  const hd = (p && p.hd ? p.hd : "").toLowerCase();
+
+  if (!email || !verified) return false;
+  if (isDomainAllowed(email)) return true;
+
+  // fallback por `hd` (Google Workspace)
+  return ALLOWED_DOMAINS.some(ad => hd === ad || (hd && hd.endsWith("." + ad)));
+}
+
 
 export default function AuthGate({ children }) {
-  const [state, setState] = useState({ status: "boot" }); // boot|loading|denied|ready
-  const [msg, setMsg] = useState("");
+  const [authed, setAuthed] = useState(false);
+  const [email, setEmail] = useState(null);
+  const btnRef = useRef(null);
 
   useEffect(() => {
-    // Espera a que cargue el script de GIS
-    if (!hasGoogle()) {
-      const t = setTimeout(() => setState({ status: "loading" }), 50);
-      return () => clearTimeout(t);
-    }
-    (async () => {
+    function onCredential(resp) {
       try {
-        setState({ status: "loading" });
-        // intenta silent (si ya hay consentimiento)
-        await ensureToken();
-        const u = await getUserInfo(); // { email, hd, ... } (ya lo tenés implementado)
-        const email = u?.email || "";
-        const domain = u?.hd || (email.includes("@") ? email.split("@")[1] : "");
-        if (domain !== REQUIRED_DOMAIN) {
-          setMsg(`Esta cuenta (${email || "desconocida"}) no pertenece a ${REQUIRED_DOMAIN}.`);
-          await revokeToken(); // limpia token si no corresponde
-          setState({ status: "denied" });
+        const ok = isAllowedFromGoogleIdToken(resp.credential);
+        if (!ok) {
+          setAuthed(false);
+          setEmail(null);
           return;
         }
-        setState({ status: "ready" });
+        const payload = decodeJwt(resp.credential);
+        setEmail(payload.email || null);
+        setAuthed(true);
       } catch (e) {
-        // No había token aún / no hay consentimiento → pedir login
-        setState({ status: "denied" });
+        setAuthed(false);
+        setEmail(null);
       }
-    })();
+    }
+
+    function init() {
+      if (!window.google || !window.google.accounts || !window.google.accounts.id) return;
+      window.google.accounts.id.initialize({
+        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+        callback: onCredential,
+        auto_select: false,
+        itp_support: true,
+      });
+      if (btnRef.current) {
+        window.google.accounts.id.renderButton(btnRef.current, { theme: "outline", size: "large" });
+      }
+      // opcional: One Tap
+      // window.google.accounts.id.prompt();
+    }
+
+    // si el script ya cargó
+    if (window.google && window.google.accounts && window.google.accounts.id) {
+      init();
+    } else {
+      // reintenta hasta que cargue el script
+      const t = setInterval(() => {
+        if (window.google && window.google.accounts && window.google.accounts.id) {
+          clearInterval(t);
+          init();
+        }
+      }, 300);
+      return () => clearInterval(t);
+    }
   }, []);
 
-  const signIn = async () => {
-    try {
-      setState({ status: "loading" });
-      await requestWriteScopes();      // prompt=consent con tus SCOPES
-      const u = await getUserInfo();
-      const email = u?.email || "";
-      const domain = u?.hd || (email.includes("@") ? email.split("@")[1] : "");
-      if (domain !== REQUIRED_DOMAIN) {
-        setMsg(`Esta cuenta (${email || "desconocida"}) no pertenece a ${REQUIRED_DOMAIN}.`);
-        await revokeToken();
-        setState({ status: "denied" });
-        return;
-      }
-      setState({ status: "ready" });
-    } catch (e) {
-      setMsg("No se pudo iniciar sesión.");
-      setState({ status: "denied" });
-    }
-  };
-
-  if (state.status === "boot" || state.status === "loading") {
-    return <div className="p-8 text-center">Cargando…</div>;
-  }
-
-  if (state.status === "denied") {
+  if (!authed) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="max-w-md p-6 border rounded-xl shadow-sm text-center">
-          <h1 className="text-lg font-semibold mb-2">Acceso restringido</h1>
-          <p className="text-sm text-slate-600 mb-4">
-            Solo usuarios de <strong>@{REQUIRED_DOMAIN}</strong>.
-          </p>
-          {!!msg && <p className="text-xs text-slate-500 mb-3">{msg}</p>}
-          <button
-            className="px-4 py-2 rounded-lg border hover:bg-slate-50"
-            onClick={signIn}
-          >
-            Iniciar sesión con Google
-          </button>
+      <div style={{ minHeight: "100vh", display: "grid", placeItems: "center" }}>
+        <div style={{ textAlign: "center" }}>
+          <h1>Acceso</h1>
+          <p>Iniciá sesión con tu cuenta corporativa autorizada.</p>
+          <div ref={btnRef} />
         </div>
       </div>
     );
   }
 
-  // ready
-  return <>{children}</>;
+  return children;
 }
