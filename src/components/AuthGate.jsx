@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from 'react';
 import { ensureToken, getUserInfo, requestWriteScopes, revokeToken, hasGoogle } from "../lib/googleAuth";
 
+const btnRef = useRef(null);
 // Dominios permitidos (agregá/quitá los que quieras)
 export const ALLOWED_DOMAINS = [
   "iplan.com.ar",
