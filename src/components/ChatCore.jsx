@@ -10,62 +10,61 @@ export default function ChatCore() {
     if (boxRef.current) boxRef.current.scrollTop = boxRef.current.scrollHeight;
   }, [msgs]);
 
-  async function send(e) {
-    e?.preventDefault();
-    const q = text.trim();
-    if (!q) return;
+// helper JSONP
+function jsonpCall(url, payload) {
+  return new Promise((resolve, reject) => {
+    const cb = 'cb_' + Math.random().toString(36).slice(2);
+    const s = document.createElement('script');
+    const params = new URLSearchParams();
+    params.set('callback', cb);
+    params.set('body', JSON.stringify(payload));
 
-    const url     = import.meta.env.VITE_GAS_URL;
-    const appKey  = import.meta.env.VITE_GAS_APP_KEY || '';
-    const idToken = window.__lastGoogleIdToken || '';
+    let done = false;
+    window[cb] = (data) => {
+      done = true;
+      resolve(data);
+      cleanup();
+    };
+    s.onerror = () => { if (!done) { reject(new Error('JSONP failed')); cleanup(); } };
+    s.src = `${url}?${params.toString()}`;
+    document.body.appendChild(s);
 
-    // guardas básicas
-    if (!url) {
-      setMsgs(m => [...m, { from: 'bot', text: 'No está configurada VITE_GAS_URL.' }]);
-      return;
+    function cleanup() {
+      try { delete window[cb]; } catch {}
+      try { s.parentNode && s.parentNode.removeChild(s); } catch {}
     }
+  });
+}
 
-    setMsgs(m => [...m, { from: 'yo', text: q }]);
-    setText('');
-    setLoading(true);
+async function send(e) {
+  e?.preventDefault();
+  const q = text.trim();
+  if (!q) return;
 
-    try {
-      // ⚠️ Request “simple” para evitar preflight CORS:
-      // - sin headers custom
-      // - Content-Type: text/plain
-      const body = JSON.stringify({ text: q, idToken, appKey });
+  const url     = import.meta.env.VITE_GAS_URL; // tu /exec
+  const appKey  = import.meta.env.VITE_GAS_APP_KEY || '';
+  const idToken = window.__lastGoogleIdToken || '';
 
-      const r = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body
-      });
-
-      // puede venir 401/403/500 con texto plano; lo manejo
-      let replyText = '';
-      try {
-        const data = await r.json();
-        replyText = data?.reply || data?.error || '';
-      } catch {
-        replyText = await r.text().catch(() => '');
-      }
-
-      if (!r.ok) {
-        const msg = replyText || `Error HTTP ${r.status}`;
-        setMsgs(m => [...m, { from: 'bot', text: msg }]);
-        return;
-      }
-
-      const finalText = replyText || 'No pude responder.';
-      setMsgs(m => [...m, { from: 'bot', text: finalText }]);
-
-    } catch (err) {
-      setMsgs(m => [...m, { from: 'bot', text: 'Error de red.' }]);
-      console.error('ChatCore fetch error:', err);
-    } finally {
-      setLoading(false);
-    }
+  if (!url) {
+    setMsgs(m => [...m, { from: 'bot', text: 'No está configurada VITE_GAS_URL.' }]);
+    return;
   }
+
+  setMsgs(m => [...m, { from: 'yo', text: q }]);
+  setText('');
+  setLoading(true);
+
+  try {
+    const res = await jsonpCall(url, { text: q, idToken, appKey });
+    const reply = res?.reply || res?.error || 'No pude responder.';
+    setMsgs(m => [...m, { from: 'bot', text: reply }]);
+  } catch (err) {
+    console.error('ChatCore JSONP error:', err);
+    setMsgs(m => [...m, { from: 'bot', text: 'Error de red.' }]);
+  } finally {
+    setLoading(false);
+  }
+}
 
   return (
     <div className="flex flex-col h-full">
