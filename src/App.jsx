@@ -13,7 +13,7 @@ import Progreso from "./pages/Progreso";         // Casos en Progreso
 import N3 from "./pages/N3";                     // Casos N3
 import Documentacion from "./pages/Documentacion"; // Listado de portales / acceso a doc
 import PortalDriveLanding from "./pages/PortalDriveLanding"; // /portal/:slug
-import ChatWidget from "./components/Chatwidget";
+import ChatWidget from "./components/ChatWidget.jsx";
 
 export default function App() {
   useEffect(() => {
