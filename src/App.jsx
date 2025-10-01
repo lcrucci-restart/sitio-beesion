@@ -13,6 +13,7 @@ import Progreso from "./pages/Progreso";         // Casos en Progreso
 import N3 from "./pages/N3";                     // Casos N3
 import Documentacion from "./pages/Documentacion"; // Listado de portales / acceso a doc
 import PortalDriveLanding from "./pages/PortalDriveLanding"; // /portal/:slug
+import ChatWidget from "./components/Chatwidget";
 
 export default function App() {
   useEffect(() => {
@@ -40,6 +41,8 @@ export default function App() {
         <Route path="/portal/:slug/*" element={<PortalDriveLanding />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      
+      <ChatWidget />
 
       <footer className="border-t border-slate-200">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 text-sm text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-2">

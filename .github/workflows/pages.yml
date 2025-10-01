@@ -26,6 +26,8 @@ jobs:
       VITE_DRIVE_PARENT_ID:         ${{ secrets.VITE_DRIVE_PARENT_ID }}
       VITE_DRIVE_ROOT_LABEL:        ${{ secrets.VITE_DRIVE_ROOT_LABEL }}
       VITE_ALLOWED_DOMAINS:         ${{ secrets.VITE_ALLOWED_DOMAINS }}
+      VITE_GAS_URL:                 ${{ secrets.VITE_GAS_URL }}
+      VITE_GAS_APP_KEY:             ${{ secrets.VITE_GAS_APP_KEY }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v4

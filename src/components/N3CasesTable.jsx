@@ -249,6 +249,7 @@ export default function N3CasesTable() {
         <table className="min-w-full text-sm">
           <thead style={{ background: "#E3F2FD" }}>
             <tr>
+              <th className="px-3 py-2 text-xs font-semibold uppercase">Identificador de Caso</th>
               <th className="px-3 py-2 text-xs font-semibold uppercase">Asunto</th>
               <th className="px-3 py-2 text-xs font-semibold uppercase">Estado</th>
               <th className="px-3 py-2 text-xs font-semibold uppercase">Fecha</th>
@@ -277,6 +278,7 @@ export default function N3CasesTable() {
                   }}
                   title="Clic para seleccionar"
                 >
+                  <td className="px-3 py-2">{r["Identificador de Caso"]}</td>
                   <td className="px-3 py-2">{r["Asunto"]}</td>
                   <td className="px-3 py-2">{r["Estado"]}</td>
                   <td className="px-3 py-2">{r["Fecha"]}</td>
