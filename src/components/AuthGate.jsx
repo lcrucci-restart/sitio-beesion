@@ -1,24 +1,42 @@
+// src/components/AuthGate.jsx
 import React, { useEffect, useRef, useState } from 'react';
 
 // --- dominios permitidos ---
-export const ALLOWED_DOMAINS = ['iplan.com.ar', 'restart-ai.com'];
+// Podés setearlos por .env: VITE_ALLOWED_DOMAINS="iplan.com.ar,restart-ai.com"
+// Si no existe, usa el fallback del array.
+const DOMAINS_FROM_ENV = (import.meta.env.VITE_ALLOWED_DOMAINS || '')
+  .split(',')
+  .map(s => s.trim().toLowerCase())
+  .filter(Boolean);
+
+export const ALLOWED_DOMAINS = DOMAINS_FROM_ENV.length
+  ? DOMAINS_FROM_ENV
+  : ['iplan.com.ar', 'restart-ai.com'];
 
 export function emailToDomain(email) {
   return (email.split('@').pop() || '').toLowerCase();
 }
 
-export function isDomainAllowed(email) {
+export function isDomainAllowed(email, hd) {
   const d = emailToDomain(email);
-  return ALLOWED_DOMAINS.some(ad => d === ad || d.endsWith('.' + ad));
+  // Acepta dominio exacto y subdominios; también respeta claim hd (Google Workspace)
+  return ALLOWED_DOMAINS.some(ad =>
+    d === ad || d.endsWith('.' + ad) ||
+    (hd && (hd.toLowerCase() === ad || hd.toLowerCase().endsWith('.' + ad)))
+  );
 }
 
 // --- JWT / Google ---
 export function decodeJwt(token) {
-  const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-  const json = decodeURIComponent(
-    atob(b64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
-  );
-  return JSON.parse(json);
+  try {
+    const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const json = decodeURIComponent(
+      atob(b64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
+    );
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
 }
 
 export function isAllowedFromGoogleIdToken(idToken) {
@@ -28,8 +46,7 @@ export function isAllowedFromGoogleIdToken(idToken) {
   const hd = (p && p.hd ? p.hd : '').toLowerCase();
 
   if (!email || !verified) return false;
-  if (isDomainAllowed(email)) return true;
-  return ALLOWED_DOMAINS.some(ad => hd === ad || (hd && hd.endsWith('.' + ad)));
+  return isDomainAllowed(email, hd);
 }
 
 export default function AuthGate({ children }) {
@@ -40,12 +57,20 @@ export default function AuthGate({ children }) {
   useEffect(() => {
     function onCredential(resp) {
       try {
+        // 🔴 CLAVE: guardar el ID token para el chat
+        window.__lastGoogleIdToken = resp.credential;
+
         const ok = isAllowedFromGoogleIdToken(resp.credential);
         if (!ok) { setAuthed(false); setEmail(null); return; }
+
         const payload = decodeJwt(resp.credential);
-        setEmail(payload.email || null);
+        setEmail(payload?.email || null);
         setAuthed(true);
-      } catch { setAuthed(false); setEmail(null); }
+      } catch {
+        setAuthed(false);
+        setEmail(null);
+        window.__lastGoogleIdToken = undefined;
+      }
     }
 
     function init() {
@@ -59,7 +84,8 @@ export default function AuthGate({ children }) {
       if (btnRef.current) {
         window.google.accounts.id.renderButton(btnRef.current, { theme: 'outline', size: 'large' });
       }
-      // window.google.accounts.id.prompt(); // opcional One Tap
+      // opcional: One Tap
+      // window.google.accounts.id.prompt();
     }
 
     if (window.google?.accounts?.id) { init(); }
@@ -77,7 +103,7 @@ export default function AuthGate({ children }) {
         <div style={{ textAlign: 'center' }}>
           <h1>Acceso</h1>
           <p>Iniciá sesión con tu cuenta corporativa autorizada.</p>
-          <div ref={btnRef} />
+        <div ref={btnRef} />
         </div>
       </div>
     );
@@ -85,5 +111,3 @@ export default function AuthGate({ children }) {
 
   return children;
 }
-
-
