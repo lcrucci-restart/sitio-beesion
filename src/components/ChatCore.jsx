@@ -7,7 +7,6 @@ export default function ChatCore() {
   const boxRef = useRef(null);
 
   useEffect(() => {
-    // auto-scroll al último mensaje
     if (boxRef.current) boxRef.current.scrollTop = boxRef.current.scrollHeight;
   }, [msgs]);
 
@@ -15,25 +14,57 @@ export default function ChatCore() {
     e?.preventDefault();
     const q = text.trim();
     if (!q) return;
+
     const url     = import.meta.env.VITE_GAS_URL;
     const appKey  = import.meta.env.VITE_GAS_APP_KEY || '';
     const idToken = window.__lastGoogleIdToken || '';
 
+    // guardas básicas
+    if (!url) {
+      setMsgs(m => [...m, { from: 'bot', text: 'No está configurada VITE_GAS_URL.' }]);
+      return;
+    }
+
     setMsgs(m => [...m, { from: 'yo', text: q }]);
     setText('');
     setLoading(true);
+
     try {
+      // ⚠️ Request “simple” para evitar preflight CORS:
+      // - sin headers custom
+      // - Content-Type: text/plain
+      const body = JSON.stringify({ text: q, idToken, appKey });
+
       const r = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type':'application/json', 'X-App-Key': appKey },
-        body: JSON.stringify({ text: q, idToken })
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body
       });
-      const j = await r.json().catch(() => ({}));
-      const reply = j?.reply || j?.error || 'No pude responder.';
-      setMsgs(m => [...m, { from: 'bot', text: reply }]);
-    } catch {
+
+      // puede venir 401/403/500 con texto plano; lo manejo
+      let replyText = '';
+      try {
+        const data = await r.json();
+        replyText = data?.reply || data?.error || '';
+      } catch {
+        replyText = await r.text().catch(() => '');
+      }
+
+      if (!r.ok) {
+        const msg = replyText || `Error HTTP ${r.status}`;
+        setMsgs(m => [...m, { from: 'bot', text: msg }]);
+        return;
+      }
+
+      const finalText = replyText || 'No pude responder.';
+      setMsgs(m => [...m, { from: 'bot', text: finalText }]);
+
+    } catch (err) {
       setMsgs(m => [...m, { from: 'bot', text: 'Error de red.' }]);
-    } finally { setLoading(false); }
+      console.error('ChatCore fetch error:', err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -56,7 +87,7 @@ export default function ChatCore() {
       <form onSubmit={send} className="mt-3 flex gap-2">
         <input
           className="flex-1 border rounded-lg px-3 py-2"
-          placeholder={`Escribí acá…`}
+          placeholder="Escribí acá…"
           value={text}
           onChange={e=>setText(e.target.value)}
         />
