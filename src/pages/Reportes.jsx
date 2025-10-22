@@ -1,12 +1,22 @@
-// src/components/Reportes.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { hasGoogle, initTokenClient, ensureToken, isSignedIn } from "../lib/googleAuth";
 import { readAbiertos, readCerrados } from "../lib/sheets";
 import { BarChart2 } from "lucide-react";
 
-// Mesas requeridas
-const MESAS_TARGET = new Set(["beesion", "tenfold", "invgate", "sharepoint"].map(s => s.toLowerCase()));
-// Estados que se consideran “cerrado”
+// === CONFIG DE FILTRO DE MESAS ===
+// Si querés contar TODAS las mesas, dejá MESAS_INCLUIR = null
+// Si querés filtrar por un subconjunto, usá el Set de abajo.
+const MESAS_INCLUIR = new Set([
+  "nivel 1",
+  "nivel 2",
+  "nivel 3",
+  "product",
+  "catu",
+  "ing red",
+]);
+// const MESAS_INCLUIR = null; // <- descomentar si querés incluir TODAS
+
+// Estados considerados “cerrado”
 const CLOSED_STATES = new Set(["resuelto", "rechazados", "cancelados", "cerrados"].map(s => s.toLowerCase()));
 
 const NORM = (s) => (s ?? "").toString().trim().toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
@@ -25,7 +35,6 @@ function parseDateMaybe(v) {
     const dt = new Date(y, mo, d, H, M, 0, 0);
     return Number.isNaN(dt.getTime()) ? null : dt;
   }
-
   const d2 = new Date(s);
   return Number.isNaN(d2.getTime()) ? null : d2;
 }
@@ -47,13 +56,18 @@ function groupCount(list, col) {
   return Array.from(map.entries()).sort((a, b) => b[1] - a[1]).slice(0, 50);
 }
 
+function filterByMesas(rows, colName) {
+  if (!MESAS_INCLUIR) return rows; // sin filtro: tomo todas
+  return rows.filter((r) => MESAS_INCLUIR.has(NORM(r[colName])));
+}
+
 export default function Reportes() {
   const [ready, setReady] = useState(isSignedIn());
   const [loading, setLoading] = useState(false);
   const [warn, setWarn] = useState(null);
 
-  const [abiertos, setAbiertos] = useState([]); // Hoja “Abiertos”
-  const [cerrados, setCerrados] = useState([]); // Hoja “Cerrados”
+  const [abiertos, setAbiertos] = useState([]);
+  const [cerrados, setCerrados] = useState([]);
 
   // auth
   useEffect(() => {
@@ -75,22 +89,22 @@ export default function Reportes() {
       setWarn(null);
       try {
         const [a, c] = await Promise.all([
-          readAbiertos().catch((e) => { console.error("readAbiertos", e); return { rows: [] }; }),
-          readCerrados().catch((e) => { console.error("readCerrados", e); return { rows: [] }; }),
+          readAbiertos().catch(() => ({ rows: [], headers: [] })),
+          readCerrados().catch(() => ({ rows: [], headers: [] })),
         ]);
         if (!alive) return;
         setAbiertos(Array.isArray(a.rows) ? a.rows : []);
         setCerrados(Array.isArray(c.rows) ? c.rows : []);
 
-        // chequeo de columnas clave en Cerrados
+        // Verificación de columnas en Cerrados
         const needColsC = ["Fecha fin", "Estado"];
-        const missing = needColsC.filter((h) => !((c.headers || []).includes(h)));
+        const missing = needColsC.filter((h) => !(c.headers || []).includes(h));
         if (missing.length) {
           setWarn(`No encuentro columna de cierre en Cerrados (p. ej. “Fecha fin”). Faltan: ${missing.join(", ")}`);
         }
       } catch (e) {
-        console.error("Reportes load", e);
-        if (alive) setWarn("No pude leer Abiertos/Cerrados (revisá permisos / env / Google API).");
+        if (alive) setWarn("No pude leer Abiertos/Cerrados (permisos / env / Google API).");
+        console.error(e);
       } finally {
         if (alive) setLoading(false);
       }
@@ -98,39 +112,30 @@ export default function Reportes() {
     return () => { alive = false; };
   }, [ready]);
 
-  // Filtrar por mesas target
-  const abiertosTarget = useMemo(() => {
-    // En “Abiertos” la columna normalizada es “Mesa”
-    return abiertos.filter((r) => MESAS_TARGET.has(NORM(r["Mesa"])));
-  }, [abiertos]);
+  // === Abiertos (columna Mesa)
+  const abiertosBase = useMemo(() => filterByMesas(abiertos, "Mesa"), [abiertos]);
 
-  const cerradosTarget = useMemo(() => {
-    // En “Cerrados” la columna es “Mesa asignada”
-    return cerrados.filter((r) => MESAS_TARGET.has(NORM(r["Mesa asignada"])));
-  }, [cerrados]);
+  const ult30_creados_noevo = useMemo(
+    () => abiertosBase.filter((r) => !isEvo(r) && withinLastDays(r["Fecha de creación"], 30)).length,
+    [abiertosBase]
+  );
 
-  // KPIs creados últimos 30 días (desde Abiertos)
-  const ult30_creados_noevo = useMemo(() => {
-    return abiertosTarget.filter((r) => !isEvo(r) && withinLastDays(r["Fecha de creación"], 30)).length;
-  }, [abiertosTarget]);
+  const ult30_creados_evo = useMemo(
+    () => abiertosBase.filter((r) => isEvo(r) && withinLastDays(r["Fecha de creación"], 30)).length,
+    [abiertosBase]
+  );
 
-  const ult30_creados_evo = useMemo(() => {
-    return abiertosTarget.filter((r) => isEvo(r) && withinLastDays(r["Fecha de creación"], 30)).length;
-  }, [abiertosTarget]);
-
-  // Base de cerrados últimos 30 días (desde Cerrados)
+  // === Cerrados (columna Mesa asignada)
   const cerradosBase = useMemo(() => {
-    if (!cerradosTarget.length) return [];
-    return cerradosTarget.filter(
+    const filtrados = filterByMesas(cerrados, "Mesa asignada");
+    return filtrados.filter(
       (r) => CLOSED_STATES.has(NORM(r["Estado"])) && withinLastDays(r["Fecha fin"], 30)
     );
-  }, [cerradosTarget]);
+  }, [cerrados]);
 
-  // 3) No evolutivos cerrados por Analista / Aplicación
-  const cerradosNoEvo = useMemo(
-    () => cerradosBase.filter((r) => !isEvo(r)),
-    [cerradosBase]
-  );
+  const cerradosNoEvo = useMemo(() => cerradosBase.filter((r) => !isEvo(r)), [cerradosBase]);
+  const cerradosEvo   = useMemo(() => cerradosBase.filter((r) =>  isEvo(r)), [cerradosBase]);
+
   const cerrados_noevo_por_analista = useMemo(
     () => groupCount(cerradosNoEvo, "Agente asignado"),
     [cerradosNoEvo]
@@ -140,11 +145,6 @@ export default function Reportes() {
     [cerradosNoEvo]
   );
 
-  // 4) Evolutivos cerrados por Analista / Aplicación
-  const cerradosEvo = useMemo(
-    () => cerradosBase.filter((r) => isEvo(r)),
-    [cerradosBase]
-  );
   const cerrados_evo_por_analista = useMemo(
     () => groupCount(cerradosEvo, "Agente asignado"),
     [cerradosEvo]
@@ -154,75 +154,73 @@ export default function Reportes() {
     [cerradosEvo]
   );
 
-  if (!ready) {
-    return (
-      <section className="bg-white">
-        <div className="mx-auto max-w-7xl p-8">
+  return (
+    <section className="bg-white">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+        {!ready ? (
           <div className="rounded-2xl border-2 border-[#398FFF] p-6">
             <div className="text-lg font-semibold text-[#398FFF]">Conectar Google</div>
-            <p className="text-sm mt-1">Necesito permiso para leer tus hojas <b>Abiertos</b> y <b>Cerrados</b>.</p>
+            <p className="text-sm mt-1">Necesito permiso para leer <b>Abiertos</b> y <b>Cerrados</b>.</p>
             <button onClick={connect} className="mt-3 px-4 py-2 rounded-xl bg-[#398FFF] text-white">
               Conectar
             </button>
           </div>
-        </div>
-      </section>
-    );
-  }
+        ) : (
+          <>
+            <div className="flex items-center gap-2 text-[#398FFF] mb-4">
+              <BarChart2 className="w-5 h-5" />
+              <h2 className="text-2xl font-bold">Reportes — últimos 30 días</h2>
+            </div>
 
-  return (
-    <section className="bg-white">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex items-center gap-2 text-[#398FFF] mb-4">
-          <BarChart2 className="w-5 h-5" />
-          <h2 className="text-2xl font-bold">Reportes — últimos 30 días</h2>
-        </div>
+            {warn && (
+              <div className="mb-4 rounded-xl border-2 border-[#fd006e] text-[#fd006e] bg-white px-3 py-2 text-sm">
+                {warn}
+              </div>
+            )}
 
-        {warn && (
-          <div className="mb-4 rounded-xl border-2 border-[#fd006e] text-[#fd006e] bg-white px-3 py-2 text-sm">
-            {warn}
-          </div>
+            {/* KPIs creados */}
+            <div className="grid sm:grid-cols-2 gap-6">
+              <div className="rounded-2xl border-2 border-[#398FFF] p-6">
+                <div className="text-slate-500 text-sm">No evolutivos creados</div>
+                <div className="mt-2 text-5xl font-extrabold">{loading ? "…" : ult30_creados_noevo}</div>
+                <div className="text-xs text-slate-500 mt-2">
+                  {MESAS_INCLUIR ? "Mesas filtradas" : "Todas las mesas"}
+                </div>
+              </div>
+              <div className="rounded-2xl border-2 border-[#398FFF] p-6">
+                <div className="text-slate-500 text-sm">Evolutivos creados</div>
+                <div className="mt-2 text-5xl font-extrabold">{loading ? "…" : ult30_creados_evo}</div>
+                <div className="text-xs text-slate-500 mt-2">Tipo = “Pedido de cambio”</div>
+              </div>
+            </div>
+
+            {/* Cerrados por Analista / Aplicación (No Evo) */}
+            <div className="mt-8 grid lg:grid-cols-2 gap-6">
+              <div className="rounded-2xl border-2 border-[#398FFF] p-6">
+                <div className="font-semibold text-[#398FFF]">No evolutivos cerrados por Analista</div>
+                <TableList rows={cerrados_noevo_por_analista} loading={loading} labelA="Analista" />
+              </div>
+
+              <div className="rounded-2xl border-2 border-[#398FFF] p-6">
+                <div className="font-semibold text-[#398FFF]">No evolutivos cerrados por Aplicación</div>
+                <TableList rows={cerrados_noevo_por_app} loading={loading} labelA="Aplicación" />
+              </div>
+            </div>
+
+            {/* Cerrados por Analista / Aplicación (Evo) */}
+            <div className="mt-8 grid lg:grid-cols-2 gap-6">
+              <div className="rounded-2xl border-2 border-[#398FFF] p-6">
+                <div className="font-semibold text-[#398FFF]">Evolutivos cerrados por Analista</div>
+                <TableList rows={cerrados_evo_por_analista} loading={loading} labelA="Analista" />
+              </div>
+
+              <div className="rounded-2xl border-2 border-[#398FFF] p-6">
+                <div className="font-semibold text-[#398FFF]">Evolutivos cerrados por Aplicación</div>
+                <TableList rows={cerrados_evo_por_app} loading={loading} labelA="Aplicación" />
+              </div>
+            </div>
+          </>
         )}
-
-        {/* KPIs creados */}
-        <div className="grid sm:grid-cols-2 gap-6">
-          <div className="rounded-2xl border-2 border-[#398FFF] p-6">
-            <div className="text-slate-500 text-sm">No evolutivos creados</div>
-            <div className="mt-2 text-5xl font-extrabold">{loading ? "…" : ult30_creados_noevo}</div>
-            <div className="text-xs text-slate-500 mt-2">Mesas: Beesion, Tenfold, InvGate, SharePoint</div>
-          </div>
-          <div className="rounded-2xl border-2 border-[#398FFF] p-6">
-            <div className="text-slate-500 text-sm">Evolutivos creados</div>
-            <div className="mt-2 text-5xl font-extrabold">{loading ? "…" : ult30_creados_evo}</div>
-            <div className="text-xs text-slate-500 mt-2">Tipo = “Pedido de cambio”</div>
-          </div>
-        </div>
-
-        {/* Cerrados por Analista / Aplicación (No Evo) */}
-        <div className="mt-8 grid lg:grid-cols-2 gap-6">
-          <div className="rounded-2xl border-2 border-[#398FFF] p-6">
-            <div className="font-semibold text-[#398FFF]">No evolutivos cerrados por Analista</div>
-            <TableList rows={cerrados_noevo_por_analista} loading={loading} labelA="Analista" />
-          </div>
-
-          <div className="rounded-2xl border-2 border-[#398FFF] p-6">
-            <div className="font-semibold text-[#398FFF]">No evolutivos cerrados por Aplicación</div>
-            <TableList rows={cerrados_noevo_por_app} loading={loading} labelA="Aplicación" />
-          </div>
-        </div>
-
-        {/* Cerrados por Analista / Aplicación (Evo) */}
-        <div className="mt-8 grid lg:grid-cols-2 gap-6">
-          <div className="rounded-2xl border-2 border-[#398FFF] p-6">
-            <div className="font-semibold text-[#398FFF]">Evolutivos cerrados por Analista</div>
-            <TableList rows={cerrados_evo_por_analista} loading={loading} labelA="Analista" />
-          </div>
-
-          <div className="rounded-2xl border-2 border-[#398FFF] p-6">
-            <div className="font-semibold text-[#398FFF]">Evolutivos cerrados por Aplicación</div>
-            <TableList rows={cerrados_evo_por_app} loading={loading} labelA="Aplicación" />
-          </div>
-        </div>
       </div>
     </section>
   );
