@@ -3,24 +3,25 @@ import { hasGoogle, initTokenClient, ensureToken, isSignedIn } from "../lib/goog
 import { readAbiertos, readCerrados } from "../lib/sheets";
 import { BarChart2 } from "lucide-react";
 
-// === CONFIG DE FILTRO DE MESAS ===
-// Si querés contar TODAS las mesas, dejá MESAS_INCLUIR = null
-// Si querés filtrar por un subconjunto, usá el Set de abajo.
-const MESAS_INCLUIR = new Set([
-  "nivel 1",
-  "nivel 2",
-  "nivel 3",
-  "product",
-  "catu",
-  "ing red",
-]);
-// const MESAS_INCLUIR = null; // <- descomentar si querés incluir TODAS
-
-// Estados considerados “cerrado”
-const CLOSED_STATES = new Set(["resuelto", "rechazados", "cancelados", "cerrados"].map(s => s.toLowerCase()));
+// === Config ===
+// Si querés filtrar por un subconjunto de mesas, poné un Set en MESAS_INCLUIR (valores ya normalizados, ej. "nivel 1")
+// Si querés incluir TODAS las mesas, dejá MESAS_INCLUIR = null
+const MESAS_INCLUIR = null;
+// Ejemplo de filtro si lo necesitás luego:
+// const MESAS_INCLUIR = new Set(["nivel 1","nivel 2","nivel 3","product","catu","ing red"]);
 
 const NORM = (s) => (s ?? "").toString().trim().toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
 const isEvo = (row) => NORM(row?.["Tipo"]) === "pedido de cambio";
+
+// Estados “cerrados” (flexibles: singular/plural/género/variaciones)
+function isClosedState(v) {
+  const n = NORM(v);
+  // cubre: cerrado / cerrada / cerrados / cerradas / cerrado por usuario, etc.
+  //        cancelado / cancelada / cancelados / canceladas
+  //        rechazado / rechazada / rechazados / rechazadas
+  //        resuelto / resuelta / resueltos / resueltas
+  return /(cerrad|cancelad|rechazad|resuelt)/.test(n);
+}
 
 function parseDateMaybe(v) {
   if (v instanceof Date) return v;
@@ -57,7 +58,7 @@ function groupCount(list, col) {
 }
 
 function filterByMesas(rows, colName) {
-  if (!MESAS_INCLUIR) return rows; // sin filtro: tomo todas
+  if (!MESAS_INCLUIR) return rows; // sin filtro: todas las mesas
   return rows.filter((r) => MESAS_INCLUIR.has(NORM(r[colName])));
 }
 
@@ -69,18 +70,9 @@ export default function Reportes() {
   const [abiertos, setAbiertos] = useState([]);
   const [cerrados, setCerrados] = useState([]);
 
-  // auth
-  useEffect(() => {
-    if (!hasGoogle()) return;
-    initTokenClient();
-  }, []);
+  useEffect(() => { if (hasGoogle()) initTokenClient(); }, []);
+  const connect = async () => { await ensureToken(); setReady(true); };
 
-  const connect = async () => {
-    await ensureToken();
-    setReady(true);
-  };
-
-  // cargar Abiertos + Cerrados
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -96,7 +88,6 @@ export default function Reportes() {
         setAbiertos(Array.isArray(a.rows) ? a.rows : []);
         setCerrados(Array.isArray(c.rows) ? c.rows : []);
 
-        // Verificación de columnas en Cerrados
         const needColsC = ["Fecha fin", "Estado"];
         const missing = needColsC.filter((h) => !(c.headers || []).includes(h));
         if (missing.length) {
@@ -112,24 +103,23 @@ export default function Reportes() {
     return () => { alive = false; };
   }, [ready]);
 
-  // === Abiertos (columna Mesa)
+  // Abiertos → “Mesa”
   const abiertosBase = useMemo(() => filterByMesas(abiertos, "Mesa"), [abiertos]);
 
   const ult30_creados_noevo = useMemo(
     () => abiertosBase.filter((r) => !isEvo(r) && withinLastDays(r["Fecha de creación"], 30)).length,
     [abiertosBase]
   );
-
   const ult30_creados_evo = useMemo(
-    () => abiertosBase.filter((r) => isEvo(r) && withinLastDays(r["Fecha de creación"], 30)).length,
+    () => abiertosBase.filter((r) =>  isEvo(r) && withinLastDays(r["Fecha de creación"], 30)).length,
     [abiertosBase]
   );
 
-  // === Cerrados (columna Mesa asignada)
+  // Cerrados → “Mesa asignada”, Estado cerrado flexible, Fecha fin dentro de 30 días
   const cerradosBase = useMemo(() => {
     const filtrados = filterByMesas(cerrados, "Mesa asignada");
     return filtrados.filter(
-      (r) => CLOSED_STATES.has(NORM(r["Estado"])) && withinLastDays(r["Fecha fin"], 30)
+      (r) => isClosedState(r["Estado"]) && withinLastDays(r["Fecha fin"], 30)
     );
   }, [cerrados]);
 
@@ -137,26 +127,22 @@ export default function Reportes() {
   const cerradosEvo   = useMemo(() => cerradosBase.filter((r) =>  isEvo(r)), [cerradosBase]);
 
   const cerrados_noevo_por_analista = useMemo(
-    () => groupCount(cerradosNoEvo, "Agente asignado"),
-    [cerradosNoEvo]
+    () => groupCount(cerradosNoEvo, "Agente asignado"), [cerradosNoEvo]
   );
   const cerrados_noevo_por_app = useMemo(
-    () => groupCount(cerradosNoEvo, "Módulo"),
-    [cerradosNoEvo]
+    () => groupCount(cerradosNoEvo, "Módulo"), [cerradosNoEvo]
   );
 
   const cerrados_evo_por_analista = useMemo(
-    () => groupCount(cerradosEvo, "Agente asignado"),
-    [cerradosEvo]
+    () => groupCount(cerradosEvo, "Agente asignado"), [cerradosEvo]
   );
   const cerrados_evo_por_app = useMemo(
-    () => groupCount(cerradosEvo, "Módulo"),
-    [cerradosEvo]
+    () => groupCount(cerradosEvo, "Módulo"), [cerradosEvo]
   );
 
   return (
     <section className="bg-white">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+      <div className="mx-auto max-w-7xl px_4 sm:px-6 lg:px-8 py-8">
         {!ready ? (
           <div className="rounded-2xl border-2 border-[#398FFF] p-6">
             <div className="text-lg font-semibold text-[#398FFF]">Conectar Google</div>
@@ -194,26 +180,24 @@ export default function Reportes() {
               </div>
             </div>
 
-            {/* Cerrados por Analista / Aplicación (No Evo) */}
+            {/* Cerrados No Evo */}
             <div className="mt-8 grid lg:grid-cols-2 gap-6">
               <div className="rounded-2xl border-2 border-[#398FFF] p-6">
                 <div className="font-semibold text-[#398FFF]">No evolutivos cerrados por Analista</div>
                 <TableList rows={cerrados_noevo_por_analista} loading={loading} labelA="Analista" />
               </div>
-
               <div className="rounded-2xl border-2 border-[#398FFF] p-6">
                 <div className="font-semibold text-[#398FFF]">No evolutivos cerrados por Aplicación</div>
                 <TableList rows={cerrados_noevo_por_app} loading={loading} labelA="Aplicación" />
               </div>
             </div>
 
-            {/* Cerrados por Analista / Aplicación (Evo) */}
+            {/* Cerrados Evo */}
             <div className="mt-8 grid lg:grid-cols-2 gap-6">
               <div className="rounded-2xl border-2 border-[#398FFF] p-6">
                 <div className="font-semibold text-[#398FFF]">Evolutivos cerrados por Analista</div>
                 <TableList rows={cerrados_evo_por_analista} loading={loading} labelA="Analista" />
               </div>
-
               <div className="rounded-2xl border-2 border-[#398FFF] p-6">
                 <div className="font-semibold text-[#398FFF]">Evolutivos cerrados por Aplicación</div>
                 <TableList rows={cerrados_evo_por_app} loading={loading} labelA="Aplicación" />
@@ -237,12 +221,8 @@ function TableList({ rows, loading, labelA }) {
           </tr>
         </thead>
         <tbody>
-          {loading && (
-            <tr><td colSpan={2} className="px-3 py-3 text-slate-500">Cargando…</td></tr>
-          )}
-          {!loading && rows?.length === 0 && (
-            <tr><td colSpan={2} className="px-3 py-3 text-slate-500">Sin datos</td></tr>
-          )}
+          {loading && <tr><td colSpan={2} className="px-3 py-3 text-slate-500">Cargando…</td></tr>}
+          {!loading && rows?.length === 0 && <tr><td colSpan={2} className="px-3 py-3 text-slate-500">Sin datos</td></tr>}
           {rows?.map(([name, count]) => (
             <tr key={name} className="border-b last:border-0">
               <td className="px-3 py-2">{name}</td>
