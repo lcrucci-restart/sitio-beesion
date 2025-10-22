@@ -19,11 +19,18 @@ export default function Navbar() {
             Inicio
           </NavLink>
 
-          <NavLink
+          {/*<NavLink
             to="/documentacion"
             className={({isActive}) => `${linkBase} ${isActive?linkActive:linkIdle}`}
           >
             Documentación
+          </NavLink>*/}
+
+          <NavLink
+            to="/reportes"
+            className={({isActive}) => `${linkBase} ${isActive?linkActive:linkIdle}`}
+          >
+            Reportes
           </NavLink>
 
           <NavLink

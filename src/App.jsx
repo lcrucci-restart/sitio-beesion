@@ -14,6 +14,7 @@ import N3 from "./pages/N3";                     // Casos N3
 import Documentacion from "./pages/Documentacion"; // Listado de portales / acceso a doc
 import PortalDriveLanding from "./pages/PortalDriveLanding"; // /portal/:slug
 import ChatWidget from "./components/ChatWidget.jsx";
+import Reportes from "./pages/Reportes";
 
 export default function App() {
   useEffect(() => {
@@ -35,7 +36,8 @@ export default function App() {
 
       <Routes>
         <Route path="/" element={<Home />} />
-        <Route path="/documentacion" element={<Documentacion />} />
+        // <Route path="/documentacion" element={<Documentacion />} />
+        <Route path="/reportes" element={<Reportes />} />
         <Route path="/progreso" element={<Progreso />} />
         <Route path="/n3" element={<N3 />} />
         <Route path="/portal/:slug/*" element={<PortalDriveLanding />} />

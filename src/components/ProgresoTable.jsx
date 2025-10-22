@@ -6,7 +6,7 @@ import { hasGoogle, initTokenClient, ensureToken, isSignedIn } from "../lib/goog
 const SHEET_ID  =
 import.meta.env.VITE_PROG_SHEET_ID
 import.meta.env.VITE_SHEETS_SPREADSHEET_ID; // fallback al ID general
-const SHEET_TAB = import.meta.env.VITE_PROG_SHEET_TAB || "Master";
+const SHEET_TAB = import.meta.env.VITE_PROG_SHEET_TAB || "Abiertos";
 const API = "https://sheets.googleapis.com/v4/spreadsheets";
 
 // Encabezados esperados en Master

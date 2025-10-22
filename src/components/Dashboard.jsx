@@ -7,7 +7,7 @@ const API = "https://sheets.googleapis.com/v4/spreadsheets";
 
 // Usa las mismas env que Progreso
 const SHEET_ID  = import.meta.env.VITE_PROG_SHEET_ID;
-const SHEET_TAB = import.meta.env.VITE_PROG_SHEET_TAB || "Master";
+const SHEET_TAB = import.meta.env.VITE_PROG_SHEET_TAB || "Abiertos";
 const SHEET_GID = import.meta.env.VITE_PROG_SHEET_GID;
 
 const OPEN_STATES = ["Abierto", "Pendiente", "En espera"];
