@@ -215,7 +215,7 @@ export default function Dashboard() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
           <div className="rounded-2xl border-2 border-[#398FFF] p-6 bg-white">
             <div className="text-lg font-semibold text-[#398FFF]">Conectar Google</div>
-            <p className="text-sm mt-1">Para leer la hoja <b>Master</b>, conectá tu cuenta.</p>
+            <p className="text-sm mt-1">Para leer la hoja <b>Abiertos</b>, conectá tu cuenta.</p>
             <button
               onClick={connect}
               className="mt-3 px-4 py-2 rounded-xl bg-[#398FFF] text-white hover:opacity-90">
@@ -246,7 +246,7 @@ export default function Dashboard() {
           <div>
             <h2 className="text-2xl sm:text-3xl font-bold">Panel de Control</h2>
             <p className="mt-2 text-slate-600">
-              Resumen de <b>casos abiertos</b> (Abierto / Pendiente / En espera) desde <span className="font-semibold">Master</span>.
+              Resumen de <b>casos abiertos</b> (Abierto / Pendiente / En espera) desde <span className="font-semibold">Abiertos</span>.
             </p>
           </div>
 
