@@ -11,9 +11,10 @@ const API = "https://sheets.googleapis.com/v4/spreadsheets";
 
 // Encabezados esperados en Abiertos
 const HDR = {
-  invgate:     "Invgate",
+  invgate:     "Nro",
   asunto:      "Asunto",
   usuario:     "Usuario",
+  descripcion: "Descripción",
   fecha:       "Fecha de creación",
   aging:       "Aging",
   prioridad:   "Prioridad",
@@ -144,9 +145,10 @@ export default function ProgresoTable() {
       const idx = (name) => hdr.findIndex(h => h.toLowerCase() === name.toLowerCase());
 
       const i = {
-        invgate:     idx(HDR.invgate),
+        Nro:         idx(HDR.nro),
         asunto:      idx(HDR.asunto),
         usuario:     idx(HDR.usuario),
+        descripcion: idx(HDR.descripcion),
         fecha:       idx(HDR.fecha),
         aging:       idx(HDR.aging),
         prioridad:   idx(HDR.prioridad),
@@ -167,9 +169,10 @@ export default function ProgresoTable() {
         .filter(r => r && r.some(c => String(c).trim() !== "")) // evita filas 100% vacías
         .map((r, k) => ({
           _row: k + 2,
-          id:           i.invgate   >=0 ? (r[i.invgate]   ?? "") : "",
+          id:           i.nro   >=0 ? (r[i.nro]   ?? "") : "",
           asunto:       i.asunto    >=0 ? (r[i.asunto]    ?? "") : "",
           usuario:      i.usuario   >=0 ? (r[i.usuario]   ?? "") : "",
+          descripcion:  i.descripcion>=0?(r[i.descripcion]?? "") : "",
           fecha:        i.fecha     >=0 ? (r[i.fecha]     ?? "") : "",
           aging:        i.aging     >=0 ? (r[i.aging]     ?? "") : "",
           prioridad:    i.prioridad >=0 ? (r[i.prioridad] ?? "") : "",
