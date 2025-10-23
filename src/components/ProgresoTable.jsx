@@ -3,15 +3,16 @@ import React, { useEffect, useMemo, useState } from "react";
 import { RefreshCcw, Pencil, Save, X, XCircle, ChevronDown, ChevronRight } from "lucide-react";
 import { hasGoogle, initTokenClient, ensureToken, isSignedIn } from "../lib/googleAuth";
 
-const SHEET_ID  =
-import.meta.env.VITE_PROG_SHEET_ID
-import.meta.env.VITE_SHEETS_SPREADSHEET_ID; // fallback al ID general
+const SHEET_ID =
+  import.meta.env.VITE_PROG_SHEET_ID ||
+  import.meta.env.VITE_SHEETS_SPREADSHEET_ID; // fallback al ID general
+
 const SHEET_TAB = import.meta.env.VITE_PROG_SHEET_TAB || "Abiertos";
 const API = "https://sheets.googleapis.com/v4/spreadsheets";
 
-// Encabezados esperados en Abiertos
+// Encabezados esperados en Abiertos (exactos como en la hoja)
 const HDR = {
-  invgate:     "Nro",
+  nro:         "Nro",
   asunto:      "Asunto",
   usuario:     "Usuario",
   descripcion: "Descripción",
@@ -145,7 +146,7 @@ export default function ProgresoTable() {
       const idx = (name) => hdr.findIndex(h => h.toLowerCase() === name.toLowerCase());
 
       const i = {
-        Nro:         idx(HDR.nro),
+        nro:         idx(HDR.nro),
         asunto:      idx(HDR.asunto),
         usuario:     idx(HDR.usuario),
         descripcion: idx(HDR.descripcion),
@@ -161,18 +162,18 @@ export default function ProgresoTable() {
         comentario:  idx(HDR.comentario),
         marca:       idx(HDR.marca),
         etiqueta:    idx(HDR.etiqueta),
-        etqMadre:    idx(HDR.etqMadre),   // "Sí"/""
-        etqColor:    idx(HDR.etqColor),   // opcional
+        etqMadre:    idx(HDR.etqMadre),
+        etqColor:    idx(HDR.etqColor),
       };
 
       const out = values.slice(1)
         .filter(r => r && r.some(c => String(c).trim() !== "")) // evita filas 100% vacías
         .map((r, k) => ({
           _row: k + 2,
-          id:           i.nro   >=0 ? (r[i.nro]   ?? "") : "",
+          id:           i.nro       >=0 ? (r[i.nro]       ?? "") : "",
           asunto:       i.asunto    >=0 ? (r[i.asunto]    ?? "") : "",
           usuario:      i.usuario   >=0 ? (r[i.usuario]   ?? "") : "",
-          descripcion:  i.descripcion>=0?(r[i.descripcion]?? "") : "",
+          descripcion:  i.descripcion>=0 ? (r[i.descripcion]?? "") : "",
           fecha:        i.fecha     >=0 ? (r[i.fecha]     ?? "") : "",
           aging:        i.aging     >=0 ? (r[i.aging]     ?? "") : "",
           prioridad:    i.prioridad >=0 ? (r[i.prioridad] ?? "") : "",
@@ -426,9 +427,8 @@ export default function ProgresoTable() {
     } catch (e) { console.error(e); toast("No pude quitar etiqueta."); }
   };
 
-  // Lista de etiquetas dueñas (todas) y por dataset activo
+  // dueñas presentes en el dataset activo
   const labelsBase = useMemo(() => {
-    // dueñas presentes en el dataset activo
     const names = new Set(base.filter(r => isTrue(r.etqMadre) && (r.etiqueta||"").trim()).map(r => r.etiqueta.trim()));
     return labelsAll.filter(l => names.has(l.name));
   }, [base, labelsAll]);
@@ -449,10 +449,10 @@ export default function ProgresoTable() {
   const selectedRow = useMemo(() => rows.find(x => x.id === selectedId) || null, [rows, selectedId]);
 
   // UI
- if (!SHEET_ID) {
-   return <div className="rounded-2xl border-2 border-[#fd006e] p-4 bg-white text-[#fd006e]">
-     Falta configurar <code>VITE_PROG_SHEET_ID</code> o <code>VITE_SHEETS_SPREADSHEET_ID</code>.
-   </div>;
+  if (!SHEET_ID) {
+    return <div className="rounded-2xl border-2 border-[#fd006e] p-4 bg-white text-[#fd006e]">
+      Falta configurar <code>VITE_PROG_SHEET_ID</code> o <code>VITE_SHEETS_SPREADSHEET_ID</code>.
+    </div>;
   }
   if (!ready) {
     return <div className="rounded-2xl border-2 border-[#398FFF] p-6 bg-white">
@@ -683,7 +683,7 @@ export default function ProgresoTable() {
         <table className="min-w-full text-[13px] leading-tight">
           <thead style={{ background: "#E3F2FD" }}>
             <tr>
-              <th className="px-3 py-1 text-xs font-semibold uppercase">Invgate</th>
+              <th className="px-3 py-1 text-xs font-semibold uppercase">Nro</th>
               <th className="px-3 py-1 text-xs font-semibold uppercase">Asunto</th>
               <th className="px-3 py-1 text-xs font-semibold uppercase">Usuario</th>
               <th className="px-3 py-1 text-xs font-semibold uppercase">Fecha de creación</th>
@@ -926,15 +926,10 @@ export default function ProgresoTable() {
       </div>
 
       {msg && (
-        <div className="m-3 rounded-xl border-2 border-[#fd006e] text-[#fd006e] bg-white px-3 py-2 text-sm">
+        <div className="m-3 rounded-2xl border-2 border-[#fd006e] text-[#fd006e] bg-white px-3 py-2 text-sm">
           {msg}
         </div>
       )}
     </div>
   );
 }
-
-
-
-
-
