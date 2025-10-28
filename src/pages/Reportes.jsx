@@ -3,6 +3,12 @@ import { hasGoogle, initTokenClient, ensureToken, isSignedIn } from "../lib/goog
 import { readAbiertos, readCerrados } from "../lib/sheets";
 import { BarChart2 } from "lucide-react";
 
+// === Recharts ===
+import {
+  ResponsiveContainer, BarChart as RBarChart, Bar,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList
+} from "recharts";
+
 // === Config ===
 // Si querés filtrar por un subconjunto de mesas, poné un Set en MESAS_INCLUIR (valores ya normalizados, ej. "nivel 1")
 // Si querés incluir TODAS las mesas, dejá MESAS_INCLUIR = null
@@ -62,28 +68,42 @@ function filterByMesas(rows, colName) {
   return rows.filter((r) => MESAS_INCLUIR.has(NORM(r[colName])));
 }
 
-/* ===== Gráfico de barras simple (sin libs) ===== */
-function BarChart({ rows, color = "#398FFF" }) {
-  const max = rows.reduce((m, [, c]) => Math.max(m, c), 1);
+/* ===== Util para llevar [[name,count]] -> [{name, value}] ===== */
+function toSeries(rows, topN = 20) {
+  return rows.slice(0, topN).map(([name, count]) => ({ name, value: count }));
+}
+
+/* ===== Chart con estilo “Sheets-like” (Recharts) ===== */
+function BarsSheetsLike({ rows, color = "#398FFF", topN = 20 }) {
+  const data = toSeries(rows, topN);
+
   return (
-    <div className="mt-3 space-y-2">
-      {rows.map(([name, count]) => (
-        <div key={name}>
-          <div className="flex justify-between text-sm">
-            <div className="truncate pr-2">{name}</div>
-            <div className="text-slate-500">{count}</div>
-          </div>
-          <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
-            <div className="h-full rounded-full" style={{ width: `${(count / max) * 100}%`, background: color }} />
-          </div>
-        </div>
-      ))}
-      {rows.length === 0 && <div className="text-sm text-slate-500">Sin datos</div>}
+    <div className="mt-3" style={{ height: 360 }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <RBarChart data={data} margin={{ top: 8, right: 24, bottom: 40, left: 12 }}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis
+            dataKey="name"
+            angle={-20}
+            textAnchor="end"
+            interval={0}
+            height={60}
+            tick={{ fontSize: 11 }}
+          />
+          <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+          <Tooltip formatter={(v)=>[v, "Cerrados (30d)"]} />
+          <Legend verticalAlign="top" height={24} />
+          <Bar dataKey="value" name="Cerrados (30d)" fill={color} radius={[6,6,0,0]}>
+            <LabelList dataKey="value" position="top" fontSize={11} />
+          </Bar>
+        </RBarChart>
+      </ResponsiveContainer>
+      <div className="text-xs text-slate-500 mt-2">Top {Math.min(topN, rows.length)} ítems</div>
     </div>
   );
 }
 
-/* ===== Panel con toggle Tabla/Gráfico ===== */
+/* ===== Tabla simple ===== */
 function TableList({ rows, loading, labelA }) {
   return (
     <div className="mt-3">
@@ -109,8 +129,13 @@ function TableList({ rows, loading, labelA }) {
   );
 }
 
-function PanelConToggle({ title, rows, loading, labelA, color = "#398FFF", defaultMode = "chart" }) {
+/* ===== Panel con toggle Tabla/Gráfico (usa Recharts) ===== */
+function PanelConToggle({
+  title, rows, loading, labelA,
+  color = "#398FFF", defaultMode = "chart"
+}) {
   const [mode, setMode] = useState(defaultMode); // "chart" | "table"
+
   return (
     <div className="rounded-2xl border-2 border-[#398FFF] p-6">
       <div className="flex items-center justify-between gap-2">
@@ -134,7 +159,7 @@ function PanelConToggle({ title, rows, loading, labelA, color = "#398FFF", defau
       </div>
 
       {mode === "chart"
-        ? <BarChart rows={rows} color={color} />
+        ? <BarsSheetsLike rows={rows} color={color} />
         : <TableList rows={rows} loading={loading} labelA={labelA} />
       }
     </div>
@@ -221,7 +246,7 @@ export default function Reportes() {
 
   return (
     <section className="bg-white">
-      <div className="mx-auto max-w-7xl px_4 sm:px-6 lg:px-8 py-8">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         {!ready ? (
           <div className="rounded-2xl border-2 border-[#398FFF] p-6">
             <div className="text-lg font-semibold text-[#398FFF]">Conectar Google</div>
