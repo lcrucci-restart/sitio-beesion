@@ -1,13 +1,12 @@
 // src/pages/Reportes.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { hasGoogle, initTokenClient, ensureToken, isSignedIn } from "../lib/googleAuth";
-import { readTable } from "../lib/sheets";
 import { BarChart2 } from "lucide-react";
 import { readReporteAbiertos, readReporteCerrados } from "../lib/sheets";
 
 /** ================== CONFIG ================== */
 
-// Pestañas nuevas donde volcás los exports de InvGate
+// Pestañas master normalizadas en tu Sheet
 const TAB_ABIERTOS = "Reporte Abiertos";
 const TAB_CERRADOS = "Reporte Cerrados";
 
@@ -20,21 +19,18 @@ const VIEWS = [
   { key: "sharepoint",label: "SharePoint",mesas: new Set(["sharepoint nivel 1"]) },
 ];
 
-// Nombres de columnas exactos según tus CSV
+// Nombres de columnas EXACTOS en las master normalizadas
+// (coinciden con lo que arma el GAS: ver MASTER_COLS_OUT)
 const COLS = {
   // comunes
-  modulo: "Categoría",          // (antes "Módulo")
-  agente: "Agente asignado",
-  tipo:   "Tipo",
+  modulo:       "Módulo",
+  agente:       "Agente asignado",
+  tipo:         "Tipo",
+  mesaAsignada: "Mesa asignada",
   // abiertos
-  mesaAbiertos: "Mesa de ayuda", 
-  fecCre: "Fecha de creación",
+  fecCre:       "Fecha de creación",
   // cerrados
-  mesaCerrados: "Mesa de ayuda", // en tu export también es "Mesa de ayuda"
-  estado: "Estado",              // si el CSV de cerrados no trae "Estado", no lo uses en el filtro
-  fecFin: "Fecha de cierre",
-  fecSol: "Fecha de solución",
-  fecRech:"Fecha de rechazo",
+  fecFin:       "Fecha fin",
 };
 
 // normalizador de strings
@@ -48,17 +44,6 @@ const NORM = (s) =>
 
 // Tipo evolutivo
 const isEvo = (row) => NORM(row?.[COLS.tipo]) === "pedido de cambio";
-
-const [a, c] = await Promise.all([
-  readReporteAbiertos().catch(() => ({ rows: [], headers: [] })),
-  readReporteCerrados().catch(() => ({ rows: [], headers: [] })),
-]);
-
-// Estados que significan “cerrado/cancelado/rechazado/resuelto” (cubre variantes)
-function isClosedState(v) {
-  const n = NORM(v);
-  return /(cerrad|cancelad|rechazad|resuelt)/.test(n);
-}
 
 // parseo de fechas flexible
 function parseDateMaybe(v) {
@@ -97,7 +82,7 @@ function groupCount(list, col) {
 }
 
 // aplica filtro por VISTA (mesas)
-function filterByView(rows, view, mesaColName) {
+function filterByView(rows, view, mesaColName = COLS.mesaAsignada) {
   if (!view?.mesas) return rows; // global
   const allowed = view.mesas;
   return rows.filter((r) => allowed.has(NORM(r[mesaColName])));
@@ -198,7 +183,7 @@ export default function Reportes() {
   useEffect(() => { if (hasGoogle()) initTokenClient(); }, []);
   const connect = async () => { await ensureToken(); setReady(true); };
 
-  // carga de ambas pestañas nuevas
+  // carga de ambas pestañas master normalizadas
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -207,23 +192,30 @@ export default function Reportes() {
       setWarn(null);
       try {
         const [a, c] = await Promise.all([
-          readTable(TAB_ABIERTOS).catch(() => ({ rows: [], headers: [] })),
-          readTable(TAB_CERRADOS).catch(() => ({ rows: [], headers: [] })),
+          readReporteAbiertos().catch(() => ({ rows: [], headers: [] })),
+          readReporteCerrados().catch(() => ({ rows: [], headers: [] })),
         ]);
         if (!alive) return;
         setRowsAbiertos(Array.isArray(a.rows) ? a.rows : []);
         setRowsCerrados(Array.isArray(c.rows) ? c.rows : []);
 
-        // Aviso si faltan columnas clave en Cerrados
+        // Avisos mínimos de columnas clave en cada master
+        const missingA = [];
+        const headersA = a?.headers || [];
+        if (!headersA.includes(COLS.mesaAsignada)) missingA.push(COLS.mesaAsignada);
+        if (!headersA.includes(COLS.modulo))       missingA.push(COLS.modulo);
+        if (!headersA.includes(COLS.fecCre))       missingA.push(COLS.fecCre);
+
         const missingC = [];
         const headersC = c?.headers || [];
-        if (!headersC.includes(COLS.estado)) missingC.push(COLS.estado);
-        if (!(headersC.includes(COLS.fecFin) || headersC.includes(COLS.fecSol) || headersC.includes(COLS.fecRech))) {
-          missingC.push(`${COLS.fecFin} (o ${COLS.fecSol}/${COLS.fecRech})`);
-        }
-        if (missingC.length) {
-          setWarn(`Revisá columnas en "${TAB_CERRADOS}": faltan ${missingC.join(", ")}`);
-        }
+        if (!headersC.includes(COLS.mesaAsignada)) missingC.push(COLS.mesaAsignada);
+        if (!headersC.includes(COLS.modulo))       missingC.push(COLS.modulo);
+        if (!headersC.includes(COLS.fecFin))       missingC.push(COLS.fecFin);
+
+        const msgs = [];
+        if (missingA.length) msgs.push(`"${TAB_ABIERTOS}": faltan ${missingA.join(", ")}`);
+        if (missingC.length) msgs.push(`"${TAB_CERRADOS}": faltan ${missingC.join(", ")}`);
+        if (msgs.length) setWarn(`Revisá columnas en ${msgs.join(" — ")}`);
       } catch (e) {
         if (alive) setWarn("No pude leer Reporte Abiertos/Cerrados (permisos / env / Google API).");
         console.error(e);
@@ -236,23 +228,23 @@ export default function Reportes() {
 
   /** ====== Helpers específicos ====== */
 
-  // Fecha fin robusta (Cerrados): usa Fecha fin; si no hay, prueba solución o rechazo
+  // Fecha fin robusta (Cerrados): la master ya trae "Fecha fin", dejamos fallback por si acaso
   function getFechaFin(row) {
     const f1 = row[COLS.fecFin];
     if (f1 && String(f1).trim()) return f1;
-    const f2 = row[COLS.fecSol];
+    // no debería hacer falta, pero por si alguna corrida quedó sin consolidar:
+    const f2 = row["Fecha de solución"];
     if (f2 && String(f2).trim()) return f2;
-    const f3 = row[COLS.fecRech];
+    const f3 = row["Fecha de rechazo"];
     if (f3 && String(f3).trim()) return f3;
     return "";
   }
 
   // ====== Dataset: CERRADOS ======
-const cerradosFiltrados = useMemo(() => {
-  const base = filterByView(rowsCerrados, view, COLS.mesaCerrados);
-  // Solo fecha (últimos 30 días), sin depender de "Estado":
-  return base.filter((r) => withinLastDays(getFechaFin(r), 30));
-}, [rowsCerrados, viewKey]);
+  const cerradosFiltrados = useMemo(() => {
+    const base = filterByView(rowsCerrados, view); // usa Mesa asignada
+    return base.filter((r) => withinLastDays(getFechaFin(r), 30));
+  }, [rowsCerrados, viewKey]);
 
   const cerradosNoEvo = useMemo(() => cerradosFiltrados.filter((r) => !isEvo(r)), [cerradosFiltrados]);
   const cerradosEvo   = useMemo(() => cerradosFiltrados.filter((r) =>  isEvo(r)), [cerradosFiltrados]);
@@ -272,8 +264,7 @@ const cerradosFiltrados = useMemo(() => {
 
   // ====== Dataset: ABIERTOS ======
   const abiertosFiltrados = useMemo(() => {
-    // mesa = Mesa (en Abiertos)
-    const base = filterByView(rowsAbiertos, view, COLS.mesaAbiertos);
+    const base = filterByView(rowsAbiertos, view); // usa Mesa asignada
     return base.filter((r) => withinLastDays(r[COLS.fecCre], 30));
   }, [rowsAbiertos, viewKey]);
 
