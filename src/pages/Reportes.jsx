@@ -5,8 +5,6 @@ import { BarChart2 } from "lucide-react";
 import { readReporteAbiertos, readReporteCerrados } from "../lib/sheets";
 
 /** ================== CONFIG ================== */
-
-// Pestañas master normalizadas en tu Sheet (solo para mensajes de warning)
 const TAB_ABIERTOS = "Reporte Abiertos";
 const TAB_CERRADOS = "Reporte Cerrados";
 
@@ -19,83 +17,69 @@ const NORM = (s) =>
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "");
 
-// helper: crea un Set con los valores ya normalizados a NORM
+// helper: crea Set normalizado
 const S = (...xs) => new Set(xs.map(NORM));
 
-// Vistas con valores ya normalizados (match exacto sobre “Mesa asignada”)
+// Vistas usando los valores NORMALIZADOS reales que tenés en Master
 const VIEWS = [
-  { key: "global",     label: "Global",     mesas: null }, // sin filtro = todas
-  { key: "beesion",    label: "Beesion",    mesas: S("Nivel 1","Nivel 2","Nivel 3") },
+  { key: "global",     label: "Global",     mesas: null },
+  { key: "beesion",    label: "Beesion",    mesas: S("Nivel 1", "Nivel 2", "Nivel 3") },
   { key: "tenfold",    label: "Tenfold",    mesas: S("Tenfold") },
   { key: "invgate",    label: "Invgate",    mesas: S("Invgate") },
   { key: "sharepoint", label: "SharePoint", mesas: S("Sharepoint") },
 ];
 
-// Nombres de columnas EXACTOS en las master normalizadas (coinciden con el GAS)
+// Columnas EXACTAS en las master normalizadas
 const COLS = {
-  // comunes
   modulo:       "Módulo",
   agente:       "Agente asignado",
   tipo:         "Tipo",
   mesaAsignada: "Mesa asignada",
-  // abiertos
   fecCre:       "Fecha de creación",
-  // cerrados
   fecFin:       "Fecha fin",
 };
 
-// Tipo evolutivo
+// Evolutivo
 const isEvo = (row) => NORM(row?.[COLS.tipo]) === "pedido de cambio";
 
-/** ========= Parseo de fechas robusto =========
- * Soporta:
- *  - dd/mm/yyyy [hh:mm[:ss]] [AM|PM]
- *  - dd-mm-yyyy [hh:mm[:ss]] [AM|PM]
- *  - yyyy-mm-dd[T]hh:mm[:ss] (ISO-like)
- */
+/** ========= Parseo de fechas robusto ========= */
 function parseDateMaybe(v) {
   if (!v) return null;
   if (v instanceof Date && !Number.isNaN(v.getTime())) return v;
-
   const s = String(v).trim().replace(/\s+/g, " ");
   if (!s) return null;
 
   // yyyy-mm-dd[ T]hh:mm[:ss]
-  const iso = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/;
-  let m = iso.exec(s);
+  let m = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/.exec(s);
   if (m) {
-    const y = +m[1], mo = +m[2]-1, d = +m[3];
+    const y = +m[1], mo = +m[2] - 1, d = +m[3];
     const H = +(m[4] ?? 0), M = +(m[5] ?? 0), S = +(m[6] ?? 0);
     const dt = new Date(y, mo, d, H, M, S, 0);
     return Number.isNaN(dt.getTime()) ? null : dt;
   }
 
   // dd/mm/yyyy o dd-mm-yyyy con opcional hora, segundos y AM/PM
-  const dmy = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM|am|pm)?)?$/;
-  m = dmy.exec(s);
+  m = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM|am|pm)?)?$/.exec(s);
   if (m) {
-    const d = +m[1], mo = +m[2]-1;
-    const yy = +m[3]; const y = yy < 100 ? 2000 + yy : yy;
+    const d = +m[1], mo = +m[2] - 1, yy = +m[3]; const y = yy < 100 ? 2000 + yy : yy;
     let H = +(m[4] ?? 0), M = +(m[5] ?? 0), S = +(m[6] ?? 0);
     const ap = (m[7] || "").toUpperCase();
-
     if (ap === "AM" && H === 12) H = 0;
     if (ap === "PM" && H < 12) H += 12;
-
     const dt = new Date(y, mo, d, H, M, S, 0);
     return Number.isNaN(dt.getTime()) ? null : dt;
   }
 
-  // Último intento: que el motor lo interprete
-  const dt2 = new Date(s);
-  return Number.isNaN(dt2.getTime()) ? null : dt2;
+  const dt = new Date(s);
+  return Number.isNaN(dt.getTime()) ? null : dt;
 }
 
 function withinLastDays(date, days) {
+  if (days === "all") return true;
   const d = parseDateMaybe(date);
   if (!d) return false;
   const now = new Date();
-  const from = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  const from = new Date(now.getTime() - Number(days) * 24 * 60 * 60 * 1000);
   return d >= from && d <= now;
 }
 
@@ -109,14 +93,14 @@ function groupCount(list, col) {
   return Array.from(map.entries()).sort((a, b) => b[1] - a[1]).slice(0, 50);
 }
 
-// aplica filtro por VISTA (match exacto normalizado sobre “Mesa asignada”)
+// filtro por vista usando “Mesa asignada” ya normalizada
 function filterByView(rows, view, mesaColName = COLS.mesaAsignada) {
-  if (!view?.mesas) return rows;  // Global
-  const allowed = view.mesas;      // Set ya normalizado
+  if (!view?.mesas) return rows;
+  const allowed = view.mesas;
   return rows.filter((r) => allowed.has(NORM(r?.[mesaColName])));
 }
 
-/** ========== Componentes gráficos ligeros ========== */
+/** ========== UI helpers ========== */
 function BarChart({ rows, color = "#398FFF" }) {
   const max = rows.reduce((m, [, c]) => Math.max(m, c), 1);
   return (
@@ -144,7 +128,7 @@ function TableList({ rows, loading, labelA }) {
         <thead>
           <tr className="bg-[#E3F2FD]">
             <th className="text-left px-3 py-2">{labelA}</th>
-            <th className="text-right px-3 py-2">Cantidad (30d)</th>
+            <th className="text-right px-3 py-2">Cantidad</th>
           </tr>
         </thead>
         <tbody>
@@ -163,7 +147,7 @@ function TableList({ rows, loading, labelA }) {
 }
 
 function PanelConToggle({ title, rows, loading, labelA, color = "#398FFF", defaultMode = "chart" }) {
-  const [mode, setMode] = useState(defaultMode); // "chart" | "table"
+  const [mode, setMode] = useState(defaultMode);
   return (
     <div className="rounded-2xl border-2 border-[#398FFF] p-6">
       <div className="flex items-center justify-between gap-2">
@@ -186,26 +170,25 @@ function PanelConToggle({ title, rows, loading, labelA, color = "#398FFF", defau
         </div>
       </div>
 
-      {mode === "chart"
-        ? <BarChart rows={rows} color={color} />
-        : <TableList rows={rows} loading={loading} labelA={labelA} />
-      }
+      {mode === "chart" ? <BarChart rows={rows} color={color} /> : <TableList rows={rows} loading={loading} labelA={labelA} />}
     </div>
   );
 }
 
 /** ================== Página Reportes ================== */
 export default function Reportes() {
-  const [ready, setReady]   = useState(isSignedIn());
+  const [ready, setReady]     = useState(isSignedIn());
   const [loading, setLoading] = useState(false);
-  const [warn, setWarn]     = useState(null);
+  const [warn, setWarn]       = useState(null);
 
   const [rowsAbiertos, setRowsAbiertos] = useState([]);
   const [rowsCerrados, setRowsCerrados] = useState([]);
 
-  // selección de dataset (Abiertos / Cerrados) y View
-  const [dataset, setDataset] = useState("cerrados"); // "cerrados" | "abiertos"
-  const [viewKey, setViewKey] = useState("beesion");  // default Beesion
+  // estado UI
+  const [dataset, setDataset] = useState("cerrados");  // "cerrados" | "abiertos"
+  const [viewKey, setViewKey] = useState("beesion");   // default Beesion
+  const [days, setDays]       = useState(30);          // 30 | 60 | 90 | "all"
+
   const view = useMemo(() => VIEWS.find(v => v.key === viewKey) || VIEWS[0], [viewKey]);
 
   useEffect(() => { if (hasGoogle()) initTokenClient(); }, []);
@@ -227,7 +210,7 @@ export default function Reportes() {
         setRowsAbiertos(Array.isArray(a.rows) ? a.rows : []);
         setRowsCerrados(Array.isArray(c.rows) ? c.rows : []);
 
-        // Avisos mínimos de columnas clave en cada master
+        // avisos por headers mínimos
         const missingA = [];
         const headersA = a?.headers || [];
         if (!headersA.includes(COLS.mesaAsignada)) missingA.push(COLS.mesaAsignada);
@@ -254,13 +237,11 @@ export default function Reportes() {
     return () => { alive = false; };
   }, [ready]);
 
-  /** ====== Helpers específicos ====== */
-
-  // Fecha fin robusta (Cerrados): la master ya trae "Fecha fin", dejamos fallback por si acaso
+  /** ====== Helpers ====== */
   function getFechaFin(row) {
     const f1 = row[COLS.fecFin];
     if (f1 && String(f1).trim()) return f1;
-    // por si alguna corrida quedó sin consolidar:
+    // por si alguna corrida quedó sin consolidar
     const f2 = row["Fecha de solución"];
     if (f2 && String(f2).trim()) return f2;
     const f3 = row["Fecha de rechazo"];
@@ -270,50 +251,33 @@ export default function Reportes() {
 
   // ====== Dataset: CERRADOS ======
   const cerradosFiltrados = useMemo(() => {
-    const base = filterByView(rowsCerrados, view); // usa Mesa asignada
-    return base.filter((r) => withinLastDays(getFechaFin(r), 30));
-  }, [rowsCerrados, viewKey]);
+    const base = filterByView(rowsCerrados, view);
+    return base.filter((r) => withinLastDays(getFechaFin(r), days));
+  }, [rowsCerrados, viewKey, days]);
 
   const cerradosNoEvo = useMemo(() => cerradosFiltrados.filter((r) => !isEvo(r)), [cerradosFiltrados]);
   const cerradosEvo   = useMemo(() => cerradosFiltrados.filter((r) =>  isEvo(r)), [cerradosFiltrados]);
 
-  const cerrados_noevo_por_analista = useMemo(
-    () => groupCount(cerradosNoEvo, COLS.agente), [cerradosNoEvo]
-  );
-  const cerrados_noevo_por_app = useMemo(
-    () => groupCount(cerradosNoEvo, COLS.modulo), [cerradosNoEvo]
-  );
-  const cerrados_evo_por_analista = useMemo(
-    () => groupCount(cerradosEvo, COLS.agente), [cerradosEvo]
-  );
-  const cerrados_evo_por_app = useMemo(
-    () => groupCount(cerradosEvo, COLS.modulo), [cerradosEvo]
-  );
+  const cerrados_noevo_por_analista = useMemo(() => groupCount(cerradosNoEvo, COLS.agente), [cerradosNoEvo]);
+  const cerrados_noevo_por_app      = useMemo(() => groupCount(cerradosNoEvo, COLS.modulo), [cerradosNoEvo]);
+  const cerrados_evo_por_analista   = useMemo(() => groupCount(cerradosEvo, COLS.agente),   [cerradosEvo]);
+  const cerrados_evo_por_app        = useMemo(() => groupCount(cerradosEvo, COLS.modulo),   [cerradosEvo]);
 
   // ====== Dataset: ABIERTOS ======
   const abiertosFiltrados = useMemo(() => {
-    const base = filterByView(rowsAbiertos, view); // usa Mesa asignada
-    return base.filter((r) => withinLastDays(r[COLS.fecCre], 30));
-  }, [rowsAbiertos, viewKey]);
+    const base = filterByView(rowsAbiertos, view);
+    return base.filter((r) => withinLastDays(r[COLS.fecCre], days));
+  }, [rowsAbiertos, viewKey, days]);
 
   const abiertosNoEvo = useMemo(() => abiertosFiltrados.filter((r) => !isEvo(r)), [abiertosFiltrados]);
   const abiertosEvo   = useMemo(() => abiertosFiltrados.filter((r) =>  isEvo(r)), [abiertosFiltrados]);
 
-  const abiertos_noevo_por_app = useMemo(
-    () => groupCount(abiertosNoEvo, COLS.modulo), [abiertosNoEvo]
-  );
-  const abiertos_evo_por_app = useMemo(
-    () => groupCount(abiertosEvo, COLS.modulo), [abiertosEvo]
-  );
-  const abiertos_noevo_por_analista = useMemo(
-    () => groupCount(abiertosNoEvo, COLS.agente), [abiertosNoEvo]
-  );
-  const abiertos_evo_por_analista = useMemo(
-    () => groupCount(abiertosEvo, COLS.agente), [abiertosEvo]
-  );
+  const abiertos_noevo_por_app      = useMemo(() => groupCount(abiertosNoEvo, COLS.modulo), [abiertosNoEvo]);
+  const abiertos_evo_por_app        = useMemo(() => groupCount(abiertosEvo, COLS.modulo),   [abiertosEvo]);
+  const abiertos_noevo_por_analista = useMemo(() => groupCount(abiertosNoEvo, COLS.agente), [abiertosNoEvo]);
+  const abiertos_evo_por_analista   = useMemo(() => groupCount(abiertosEvo, COLS.agente),   [abiertosEvo]);
 
   /** ================== UI ================== */
-
   if (!ready) {
     return (
       <section className="bg-white">
@@ -321,7 +285,7 @@ export default function Reportes() {
           <div className="rounded-2xl border-2 border-[#398FFF] p-6">
             <div className="text-lg font-semibold text-[#398FFF]">Conectar Google</div>
             <p className="text-sm mt-1">Necesito permiso para leer <b>{TAB_ABIERTOS}</b> y <b>{TAB_CERRADOS}</b>.</p>
-            <button onClick={connect} className="mt-3 px-4 py-2 rounded-xl bg-[#398FFF] text-white">Conectar</button>
+            <button onClick={async () => { await connect(); }} className="mt-3 px-4 py-2 rounded-xl bg-[#398FFF] text-white">Conectar</button>
           </div>
         </div>
       </section>
@@ -331,12 +295,23 @@ export default function Reportes() {
   return (
     <section className="bg-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex items-center gap-2 text-[#398FFF] mb-4">
+        <div className="flex items-center gap-2 text-[#398FFF] mb-2">
           <BarChart2 className="w-5 h-5" />
-          <h2 className="text-2xl font-bold">Reportes — últimos 30 días</h2>
+          <h2 className="text-2xl font-bold">Reportes — últimos {days === "all" ? "todos" : `${days} días`}</h2>
         </div>
 
-        {/* Top controls: dataset + view */}
+        {/* Diagnóstico rápido */}
+        <div className="mb-4 text-sm text-slate-600">
+          <div className="flex flex-wrap gap-3">
+            <span className="px-2 py-1 rounded border">Abiertos cargados: <b>{rowsAbiertos.length}</b></span>
+            <span className="px-2 py-1 rounded border">Cerrados cargados: <b>{rowsCerrados.length}</b></span>
+            <span className="px-2 py-1 rounded border">Vista: <b>{VIEWS.find(v=>v.key===viewKey)?.label}</b></span>
+            <span className="px-2 py-1 rounded border">Abiertos filtrados: <b>{abiertosFiltrados.length}</b></span>
+            <span className="px-2 py-1 rounded border">Cerrados filtrados: <b>{cerradosFiltrados.length}</b></span>
+          </div>
+        </div>
+
+        {/* Top controls: dataset + view + days */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
           <div className="inline-flex rounded-xl border-2 overflow-hidden border-[#398FFF]">
             <button
@@ -359,6 +334,21 @@ export default function Reportes() {
                 {v.label}
               </button>
             ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-slate-600">Rango:</label>
+            <select
+              value={String(days)}
+              onChange={(e)=> setDays(e.target.value === "all" ? "all" : Number(e.target.value))}
+              className="border rounded-lg px-2 py-1 text-sm"
+              title="Rango de días para el filtro temporal"
+            >
+              <option value="30">30 días</option>
+              <option value="60">60 días</option>
+              <option value="90">90 días</option>
+              <option value="all">Todos</option>
+            </select>
           </div>
         </div>
 
