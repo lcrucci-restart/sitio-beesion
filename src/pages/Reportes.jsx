@@ -6,21 +6,32 @@ import { readReporteAbiertos, readReporteCerrados } from "../lib/sheets";
 
 /** ================== CONFIG ================== */
 
-// Pestañas master normalizadas en tu Sheet
+// Pestañas master normalizadas en tu Sheet (solo para mensajes de warning)
 const TAB_ABIERTOS = "Reporte Abiertos";
 const TAB_CERRADOS = "Reporte Cerrados";
 
-// Vistas pedidas (podés ajustar las mesas de cada vendor acá)
+// normalizador de strings
+const NORM = (s) =>
+  (s ?? "")
+    .toString()
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+
+// helper: crea un Set con los valores ya normalizados a NORM
+const S = (...xs) => new Set(xs.map(NORM));
+
+// Vistas con valores ya normalizados (match exacto sobre “Mesa asignada”)
 const VIEWS = [
-  { key: "global",    label: "Global",    mesas: null }, // sin filtro = todas
-  { key: "beesion",   label: "Beesion",   mesas: new Set(["nivel 1","nivel 2","nivel 3","product","catu","ing red"]) },
-  { key: "tenfold",   label: "Tenfold",   mesas: new Set(["tenfold nivel 1"]) },
-  { key: "invgate",   label: "InvGate",   mesas: new Set(["invgate nivel 1"]) },
-  { key: "sharepoint",label: "SharePoint",mesas: new Set(["sharepoint nivel 1"]) },
+  { key: "global",     label: "Global",     mesas: null }, // sin filtro = todas
+  { key: "beesion",    label: "Beesion",    mesas: S("Nivel 1","Nivel 2","Nivel 3") },
+  { key: "tenfold",    label: "Tenfold",    mesas: S("Tenfold") },
+  { key: "invgate",    label: "Invgate",    mesas: S("Invgate") },
+  { key: "sharepoint", label: "SharePoint", mesas: S("Sharepoint") },
 ];
 
-// Nombres de columnas EXACTOS en las master normalizadas
-// (coinciden con lo que arma el GAS: ver MASTER_COLS_OUT)
+// Nombres de columnas EXACTOS en las master normalizadas (coinciden con el GAS)
 const COLS = {
   // comunes
   modulo:       "Módulo",
@@ -32,15 +43,6 @@ const COLS = {
   // cerrados
   fecFin:       "Fecha fin",
 };
-
-// normalizador de strings
-const NORM = (s) =>
-  (s ?? "")
-    .toString()
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "");
 
 // Tipo evolutivo
 const isEvo = (row) => NORM(row?.[COLS.tipo]) === "pedido de cambio";
@@ -81,11 +83,11 @@ function groupCount(list, col) {
   return Array.from(map.entries()).sort((a, b) => b[1] - a[1]).slice(0, 50);
 }
 
-// aplica filtro por VISTA (mesas)
+// aplica filtro por VISTA (match exacto normalizado sobre “Mesa asignada”)
 function filterByView(rows, view, mesaColName = COLS.mesaAsignada) {
-  if (!view?.mesas) return rows; // global
-  const allowed = view.mesas;
-  return rows.filter((r) => allowed.has(NORM(r[mesaColName])));
+  if (!view?.mesas) return rows;  // Global
+  const allowed = view.mesas;      // Set ya normalizado
+  return rows.filter((r) => allowed.has(NORM(r?.[mesaColName])));
 }
 
 /** ========== Componentes gráficos ligeros ========== */
@@ -175,7 +177,7 @@ export default function Reportes() {
   const [rowsAbiertos, setRowsAbiertos] = useState([]);
   const [rowsCerrados, setRowsCerrados] = useState([]);
 
-  // selección de dataset (Abiertos / Cerrados) y View (Global / Beesion / Tenfold / InvGate / SharePoint)
+  // selección de dataset (Abiertos / Cerrados) y View
   const [dataset, setDataset] = useState("cerrados"); // "cerrados" | "abiertos"
   const [viewKey, setViewKey] = useState("beesion");  // default Beesion
   const view = useMemo(() => VIEWS.find(v => v.key === viewKey) || VIEWS[0], [viewKey]);
@@ -232,7 +234,7 @@ export default function Reportes() {
   function getFechaFin(row) {
     const f1 = row[COLS.fecFin];
     if (f1 && String(f1).trim()) return f1;
-    // no debería hacer falta, pero por si alguna corrida quedó sin consolidar:
+    // por si alguna corrida quedó sin consolidar:
     const f2 = row["Fecha de solución"];
     if (f2 && String(f2).trim()) return f2;
     const f3 = row["Fecha de rechazo"];
