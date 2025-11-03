@@ -3,11 +3,12 @@ import { ensureToken } from "./googleAuth";
 
 const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
 
-// ---- ENV / fallbacks ----
+/* ───────────────────────── ENV / fallbacks ───────────────────────── */
+
 const ENV = {
   API_KEY:               import.meta.env.VITE_GOOGLE_API_KEY,
 
-  // fallback spreadsheet id
+  // Fallback spreadsheet id (si no pasás uno explícito en cada call)
   FALLBACK_SHEET_ID:     import.meta.env.VITE_SHEETS_SPREADSHEET_ID
                        || import.meta.env.VITE_PROG_SHEET_ID
                        || import.meta.env.VITE_N3_SHEET_ID,
@@ -26,13 +27,22 @@ const ENV = {
   N3_ID:                 import.meta.env.VITE_N3_SHEET_ID,
   N3_TAB:                import.meta.env.VITE_N3_SHEET_TAB || "Tickets N3",
   N3_GID:                import.meta.env.VITE_N3_SHEET_GID,
+
+  // Reportes (nuevas pestañas donde volcás los exports de InvGate)
+  // Si no definís un ID propio, usa el FALLBACK_SHEET_ID
+  REP_ID:                import.meta.env.VITE_REPORTES_SHEET_ID,
+  REP_ABIERTOS_TAB:      import.meta.env.VITE_REPORTES_ABIERTOS_TAB || "Reporte Abiertos",
+  REP_ABIERTOS_GID:      import.meta.env.VITE_REPORTES_ABIERTOS_GID,
+  REP_CERRADOS_TAB:      import.meta.env.VITE_REPORTES_CERRADOS_TAB || "Reporte Cerrados",
+  REP_CERRADOS_GID:      import.meta.env.VITE_REPORTES_CERRADOS_GID,
 };
 
 if (!ENV.FALLBACK_SHEET_ID) {
   console.warn("[sheets.js] No hay sheetId de fallback en .env (VITE_SHEETS_SPREADSHEET_ID / VITE_PROG_SHEET_ID / VITE_N3_SHEET_ID). Pasá sheetId en cada llamada o completá el .env.");
 }
 
-// ---- utils ----
+/* ───────────────────────── utils ───────────────────────── */
+
 function colIdxToA1(idx0) {
   let s = "", n = idx0 + 1;
   while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); }
@@ -67,6 +77,8 @@ async function resolveTabNameByGid(sheetId, tabName, gid) {
   const m = meta?.sheets?.find(s => String(s?.properties?.sheetId) === String(gid));
   return m?.properties?.title || tabName;
 }
+
+/* ───────────────────────── core ───────────────────────── */
 
 /**
  * Lee una pestaña de Google Sheets.
@@ -190,7 +202,7 @@ export async function updateByKey(tabOrOpts, keyColName, updates, sheetId) {
   return { updated: data.length };
 }
 
-/* ---------- helpers “rápidos” por libro/pestaña ---------- */
+/* ─────────────────── helpers rápidos por libro/pestaña ─────────────────── */
 
 export async function readAbiertos() {
   const id  = ENV.PROG_ID || ENV.FALLBACK_SHEET_ID;
@@ -208,4 +220,18 @@ export async function readN3() {
   const id  = ENV.N3_ID || ENV.FALLBACK_SHEET_ID;
   const tab = ENV.N3_TAB;
   return readTable({ sheetId: id, tab, gid: ENV.N3_GID });
+}
+
+/* ─────────────────── helpers específicos de REPORTES ─────────────────── */
+
+export async function readReporteAbiertos() {
+  const id  = ENV.REP_ID || ENV.FALLBACK_SHEET_ID;
+  const tab = ENV.REP_ABIERTOS_TAB;     // "Reporte Abiertos"
+  return readTable({ sheetId: id, tab, gid: ENV.REP_ABIERTOS_GID, maxCols: 200, maxRows: 50000 });
+}
+
+export async function readReporteCerrados() {
+  const id  = ENV.REP_ID || ENV.FALLBACK_SHEET_ID;
+  const tab = ENV.REP_CERRADOS_TAB;     // "Reporte Cerrados"
+  return readTable({ sheetId: id, tab, gid: ENV.REP_CERRADOS_GID, maxCols: 200, maxRows: 50000 });
 }

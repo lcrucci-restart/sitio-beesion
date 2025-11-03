@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { hasGoogle, initTokenClient, ensureToken, isSignedIn } from "../lib/googleAuth";
 import { readTable } from "../lib/sheets";
 import { BarChart2 } from "lucide-react";
+import { readReporteAbiertos, readReporteCerrados } from "../lib/sheets";
 
 /** ================== CONFIG ================== */
 
@@ -19,19 +20,19 @@ const VIEWS = [
   { key: "sharepoint",label: "SharePoint",mesas: new Set(["sharepoint nivel 1"]) },
 ];
 
-// Nombres de columnas esperadas (flexibles)
+// Nombres de columnas exactos según tus CSV
 const COLS = {
   // comunes
-  modulo: "Módulo",             // Aplicación
+  modulo: "Categoría",          // (antes "Módulo")
   agente: "Agente asignado",
   tipo:   "Tipo",
   // abiertos
-  mesaAbiertos: "Mesa",
+  mesaAbiertos: "Mesa de ayuda", 
   fecCre: "Fecha de creación",
   // cerrados
-  mesaCerrados: "Mesa asignada",
-  estado: "Estado",
-  fecFin: "Fecha fin",          // si no existe, se infiere de "Fecha de solución" / "Fecha de rechazo"
+  mesaCerrados: "Mesa de ayuda", // en tu export también es "Mesa de ayuda"
+  estado: "Estado",              // si el CSV de cerrados no trae "Estado", no lo uses en el filtro
+  fecFin: "Fecha de cierre",
   fecSol: "Fecha de solución",
   fecRech:"Fecha de rechazo",
 };
@@ -47,6 +48,11 @@ const NORM = (s) =>
 
 // Tipo evolutivo
 const isEvo = (row) => NORM(row?.[COLS.tipo]) === "pedido de cambio";
+
+const [a, c] = await Promise.all([
+  readReporteAbiertos().catch(() => ({ rows: [], headers: [] })),
+  readReporteCerrados().catch(() => ({ rows: [], headers: [] })),
+]);
 
 // Estados que significan “cerrado/cancelado/rechazado/resuelto” (cubre variantes)
 function isClosedState(v) {
@@ -242,11 +248,11 @@ export default function Reportes() {
   }
 
   // ====== Dataset: CERRADOS ======
-  const cerradosFiltrados = useMemo(() => {
-    // mesa = Mesa asignada
-    const base = filterByView(rowsCerrados, view, COLS.mesaCerrados);
-    return base.filter((r) => isClosedState(r[COLS.estado]) && withinLastDays(getFechaFin(r), 30));
-  }, [rowsCerrados, viewKey]);
+const cerradosFiltrados = useMemo(() => {
+  const base = filterByView(rowsCerrados, view, COLS.mesaCerrados);
+  // Solo fecha (últimos 30 días), sin depender de "Estado":
+  return base.filter((r) => withinLastDays(getFechaFin(r), 30));
+}, [rowsCerrados, viewKey]);
 
   const cerradosNoEvo = useMemo(() => cerradosFiltrados.filter((r) => !isEvo(r)), [cerradosFiltrados]);
   const cerradosEvo   = useMemo(() => cerradosFiltrados.filter((r) =>  isEvo(r)), [cerradosFiltrados]);
