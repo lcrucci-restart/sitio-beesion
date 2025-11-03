@@ -1,4 +1,3 @@
-// src/pages/Reportes.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { hasGoogle, initTokenClient, ensureToken, isSignedIn } from "../lib/googleAuth";
 import { BarChart2 } from "lucide-react";
@@ -8,7 +7,7 @@ import { readReporteAbiertos, readReporteCerrados } from "../lib/sheets";
 const TAB_ABIERTOS = "Reporte Abiertos";
 const TAB_CERRADOS = "Reporte Cerrados";
 
-// normalizador de strings
+// normalizador
 const NORM = (s) =>
   (s ?? "")
     .toString()
@@ -17,10 +16,10 @@ const NORM = (s) =>
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "");
 
-// helper: crea Set normalizado
+// helper Set normalizado
 const S = (...xs) => new Set(xs.map(NORM));
 
-// Vistas usando los valores NORMALIZADOS reales que tenés en Master
+// Vistas según tu normalización final
 const VIEWS = [
   { key: "global",     label: "Global",     mesas: null },
   { key: "beesion",    label: "Beesion",    mesas: S("Nivel 1", "Nivel 2", "Nivel 3") },
@@ -29,20 +28,20 @@ const VIEWS = [
   { key: "sharepoint", label: "SharePoint", mesas: S("Sharepoint") },
 ];
 
-// Columnas EXACTAS en las master normalizadas
+// Columnas EXACTAS en masters normalizadas
 const COLS = {
-  modulo:       "Módulo",
-  agente:       "Agente asignado",
-  tipo:         "Tipo",
-  mesaAsignada: "Mesa asignada",
-  fecCre:       "Fecha de creación",
-  fecFin:       "Fecha fin",
+  modulo:        "Módulo",
+  agente:        "Agente asignado",
+  tipo:          "Tipo",
+  mesaAsignada:  "Mesa asignada",
+  fecCre:        "Fecha de creación",  // aparece en Abiertos y (ahora) en Cerrados
+  fecFin:        "Fecha fin",          // solo para vistas de cerrados por fecha de cierre
 };
 
-// Evolutivo
+// evolutivo
 const isEvo = (row) => NORM(row?.[COLS.tipo]) === "pedido de cambio";
 
-/** ========= Parseo de fechas robusto ========= */
+/** ========= Fechas robustas + límites por día (timezone-safe) ========= */
 function parseDateMaybe(v) {
   if (!v) return null;
   if (v instanceof Date && !Number.isNaN(v.getTime())) return v;
@@ -58,7 +57,7 @@ function parseDateMaybe(v) {
     return Number.isNaN(dt.getTime()) ? null : dt;
   }
 
-  // dd/mm/yyyy o dd-mm-yyyy con opcional hora, segundos y AM/PM
+  // dd/mm/yyyy o dd-mm-yyyy [hh:mm[:ss] [AM|PM]]
   m = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM|am|pm)?)?$/.exec(s);
   if (m) {
     const d = +m[1], mo = +m[2] - 1, yy = +m[3]; const y = yy < 100 ? 2000 + yy : yy;
@@ -74,16 +73,23 @@ function parseDateMaybe(v) {
   return Number.isNaN(dt.getTime()) ? null : dt;
 }
 
+// trunc a 00:00 local
+function startOfDay(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0); }
+// fin de día 23:59:59.999 local
+function endOfDay(d)   { return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999); }
+
+// últimos N días (incluye hoy). Si days === "all", no filtra.
 function withinLastDays(date, days) {
   if (days === "all") return true;
   const d = parseDateMaybe(date);
   if (!d) return false;
   const now = new Date();
-  const from = new Date(now.getTime() - Number(days) * 24 * 60 * 60 * 1000);
-  return d >= from && d <= now;
+  const from = startOfDay(new Date(now.getTime() - Number(days) * 86400000));
+  const to   = endOfDay(now);
+  return d >= from && d <= to;
 }
 
-// group by cuenta
+/** ========= util de agrupación ========= */
 function groupCount(list, col) {
   const map = new Map();
   for (const r of list) {
@@ -93,7 +99,7 @@ function groupCount(list, col) {
   return Array.from(map.entries()).sort((a, b) => b[1] - a[1]).slice(0, 50);
 }
 
-// filtro por vista usando “Mesa asignada” ya normalizada
+// filtro por vista (usa mesa asignada ya normalizada)
 function filterByView(rows, view, mesaColName = COLS.mesaAsignada) {
   if (!view?.mesas) return rows;
   const allowed = view.mesas;
@@ -185,8 +191,8 @@ export default function Reportes() {
   const [rowsCerrados, setRowsCerrados] = useState([]);
 
   // estado UI
-  const [dataset, setDataset] = useState("cerrados");  // "cerrados" | "abiertos"
-  const [viewKey, setViewKey] = useState("beesion");   // default Beesion
+  const [dataset, setDataset] = useState("abiertos");  // default: abiertos
+  const [viewKey, setViewKey] = useState("global");
   const [days, setDays]       = useState(30);          // 30 | 60 | 90 | "all"
 
   const view = useMemo(() => VIEWS.find(v => v.key === viewKey) || VIEWS[0], [viewKey]);
@@ -194,7 +200,7 @@ export default function Reportes() {
   useEffect(() => { if (hasGoogle()) initTokenClient(); }, []);
   const connect = async () => { await ensureToken(); setReady(true); };
 
-  // carga de ambas pestañas master normalizadas
+  // lee ambas pestañas
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -210,7 +216,7 @@ export default function Reportes() {
         setRowsAbiertos(Array.isArray(a.rows) ? a.rows : []);
         setRowsCerrados(Array.isArray(c.rows) ? c.rows : []);
 
-        // avisos por headers mínimos
+        // chequear headers mínimos
         const missingA = [];
         const headersA = a?.headers || [];
         if (!headersA.includes(COLS.mesaAsignada)) missingA.push(COLS.mesaAsignada);
@@ -222,6 +228,7 @@ export default function Reportes() {
         if (!headersC.includes(COLS.mesaAsignada)) missingC.push(COLS.mesaAsignada);
         if (!headersC.includes(COLS.modulo))       missingC.push(COLS.modulo);
         if (!headersC.includes(COLS.fecFin))       missingC.push(COLS.fecFin);
+        if (!headersC.includes(COLS.fecCre))       missingC.push(COLS.fecCre); // <- ahora requerida
 
         const msgs = [];
         if (missingA.length) msgs.push(`"${TAB_ABIERTOS}": faltan ${missingA.join(", ")}`);
@@ -241,7 +248,6 @@ export default function Reportes() {
   function getFechaFin(row) {
     const f1 = row[COLS.fecFin];
     if (f1 && String(f1).trim()) return f1;
-    // por si alguna corrida quedó sin consolidar
     const f2 = row["Fecha de solución"];
     if (f2 && String(f2).trim()) return f2;
     const f3 = row["Fecha de rechazo"];
@@ -249,7 +255,26 @@ export default function Reportes() {
     return "";
   }
 
-  // ====== Dataset: CERRADOS ======
+  // ------ Abiertos: combinar por FECHA DE CREACIÓN (Abiertos + Cerrados) ------
+  const abiertosConsolidados = useMemo(() => {
+    // traigo creación desde ambas fuentes
+    const baseA = rowsAbiertos.map(r => ({ ...r, __src: "A" }));
+    const baseC = rowsCerrados.map(r => ({ ...r, __src: "C" })); // Cerrados también trae Fecha de creación (nuevo)
+    return [...baseA, ...baseC];
+  }, [rowsAbiertos, rowsCerrados]);
+
+  const abiertosFiltrados = useMemo(() => {
+    const porVista = filterByView(abiertosConsolidados, view); // usa Mesa asignada
+    return porVista.filter((r) => withinLastDays(r[COLS.fecCre], days));
+  }, [abiertosConsolidados, viewKey, days]);
+
+  const abiertosNoEvo = useMemo(() => abiertosFiltrados.filter((r) => !isEvo(r)), [abiertosFiltrados]);
+  const abiertosEvo   = useMemo(() => abiertosFiltrados.filter((r) =>  isEvo(r)), [abiertosFiltrados]);
+
+  const abiertos_noevo_por_app = useMemo(() => groupCount(abiertosNoEvo, COLS.modulo), [abiertosNoEvo]);
+  const abiertos_evo_por_app   = useMemo(() => groupCount(abiertosEvo,   COLS.modulo), [abiertosEvo]);
+
+  // ------ Cerrados: por FECHA FIN (si tu hoja ya viene recortada a 30d, igual soporta 60/90/Todos) ------
   const cerradosFiltrados = useMemo(() => {
     const base = filterByView(rowsCerrados, view);
     return base.filter((r) => withinLastDays(getFechaFin(r), days));
@@ -258,24 +283,10 @@ export default function Reportes() {
   const cerradosNoEvo = useMemo(() => cerradosFiltrados.filter((r) => !isEvo(r)), [cerradosFiltrados]);
   const cerradosEvo   = useMemo(() => cerradosFiltrados.filter((r) =>  isEvo(r)), [cerradosFiltrados]);
 
-  const cerrados_noevo_por_analista = useMemo(() => groupCount(cerradosNoEvo, COLS.agente), [cerradosNoEvo]);
+  const cerrados_noevo_por_analista = useMemo(() => groupCount(cerradosNoEvo, "Agente asignado"), [cerradosNoEvo]);
   const cerrados_noevo_por_app      = useMemo(() => groupCount(cerradosNoEvo, COLS.modulo), [cerradosNoEvo]);
-  const cerrados_evo_por_analista   = useMemo(() => groupCount(cerradosEvo, COLS.agente),   [cerradosEvo]);
-  const cerrados_evo_por_app        = useMemo(() => groupCount(cerradosEvo, COLS.modulo),   [cerradosEvo]);
-
-  // ====== Dataset: ABIERTOS ======
-  const abiertosFiltrados = useMemo(() => {
-    const base = filterByView(rowsAbiertos, view);
-    return base.filter((r) => withinLastDays(r[COLS.fecCre], days));
-  }, [rowsAbiertos, viewKey, days]);
-
-  const abiertosNoEvo = useMemo(() => abiertosFiltrados.filter((r) => !isEvo(r)), [abiertosFiltrados]);
-  const abiertosEvo   = useMemo(() => abiertosFiltrados.filter((r) =>  isEvo(r)), [abiertosFiltrados]);
-
-  const abiertos_noevo_por_app      = useMemo(() => groupCount(abiertosNoEvo, COLS.modulo), [abiertosNoEvo]);
-  const abiertos_evo_por_app        = useMemo(() => groupCount(abiertosEvo, COLS.modulo),   [abiertosEvo]);
-  const abiertos_noevo_por_analista = useMemo(() => groupCount(abiertosNoEvo, COLS.agente), [abiertosNoEvo]);
-  const abiertos_evo_por_analista   = useMemo(() => groupCount(abiertosEvo, COLS.agente),   [abiertosEvo]);
+  const cerrados_evo_por_analista   = useMemo(() => groupCount(cerradosEvo,   "Agente asignado"), [cerradosEvo]);
+  const cerrados_evo_por_app        = useMemo(() => groupCount(cerradosEvo,   COLS.modulo), [cerradosEvo]);
 
   /** ================== UI ================== */
   if (!ready) {
@@ -300,30 +311,28 @@ export default function Reportes() {
           <h2 className="text-2xl font-bold">Reportes — últimos {days === "all" ? "todos" : `${days} días`}</h2>
         </div>
 
-        {/* Diagnóstico rápido */}
+        {/* Diagnóstico */}
         <div className="mb-4 text-sm text-slate-600">
           <div className="flex flex-wrap gap-3">
             <span className="px-2 py-1 rounded border">Abiertos cargados: <b>{rowsAbiertos.length}</b></span>
             <span className="px-2 py-1 rounded border">Cerrados cargados: <b>{rowsCerrados.length}</b></span>
             <span className="px-2 py-1 rounded border">Vista: <b>{VIEWS.find(v=>v.key===viewKey)?.label}</b></span>
-            <span className="px-2 py-1 rounded border">Abiertos filtrados: <b>{abiertosFiltrados.length}</b></span>
-            <span className="px-2 py-1 rounded border">Cerrados filtrados: <b>{cerradosFiltrados.length}</b></span>
+            <span className="px-2 py-1 rounded border">Abiertos (creados) filtrados: <b>{abiertosFiltrados.length}</b></span>
+            <span className="px-2 py-1 rounded border">Cerrados (por fin) filtrados: <b>{cerradosFiltrados.length}</b></span>
           </div>
         </div>
 
-        {/* Top controls: dataset + view + days */}
+        {/* Controles */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
           <div className="inline-flex rounded-xl border-2 overflow-hidden border-[#398FFF]">
             <button
-              onClick={()=>setDataset("cerrados")}
-              className={`px-3 py-1.5 text-sm ${dataset==="cerrados"?"bg-[#398FFF] text-white":"text-[#398FFF]"}`}
-              title="Ver vistas de Cerrados"
-            >Cerrados</button>
-            <button
               onClick={()=>setDataset("abiertos")}
               className={`px-3 py-1.5 text-sm ${dataset==="abiertos"?"bg-[#398FFF] text-white":"text-[#398FFF]"}`}
-              title="Ver vistas de Abiertos"
             >Abiertos</button>
+            <button
+              onClick={()=>setDataset("cerrados")}
+              className={`px-3 py-1.5 text-sm ${dataset==="cerrados"?"bg-[#398FFF] text-white":"text-[#398FFF]"}`}
+            >Cerrados</button>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -342,7 +351,6 @@ export default function Reportes() {
               value={String(days)}
               onChange={(e)=> setDays(e.target.value === "all" ? "all" : Number(e.target.value))}
               className="border rounded-lg px-2 py-1 text-sm"
-              title="Rango de días para el filtro temporal"
             >
               <option value="30">30 días</option>
               <option value="60">60 días</option>
@@ -352,16 +360,32 @@ export default function Reportes() {
           </div>
         </div>
 
-        {warn && (
-          <div className="mb-4 rounded-xl border-2 border-[#fd006e] text-[#fd006e] bg-white px-3 py-2 text-sm">
-            {warn}
-          </div>
-        )}
-
         {/* ================== BLOQUES ================== */}
-        {dataset === "cerrados" ? (
+        {dataset === "abiertos" ? (
           <>
-            {/* Cerrados No Evolutivos */}
+            {/* SOLO dos tarjetas por Aplicación, como pediste */}
+            <div className="grid lg:grid-cols-2 gap-6">
+              <PanelConToggle
+                title={`Abiertos (no evolutivos) por Aplicación — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
+                rows={abiertos_noevo_por_app}
+                loading={loading}
+                labelA="Aplicación"
+                color="#398FFF"
+                defaultMode="chart"
+              />
+              <PanelConToggle
+                title={`Abiertos (evolutivos) por Aplicación — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
+                rows={abiertos_evo_por_app}
+                loading={loading}
+                labelA="Aplicación"
+                color="#fd006e"
+                defaultMode="chart"
+              />
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Cerrados (dejamos tus cuatro vistas) */}
             <div className="grid lg:grid-cols-2 gap-6">
               <PanelConToggle
                 title={`No evolutivos cerrados por Analista — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
@@ -381,7 +405,6 @@ export default function Reportes() {
               />
             </div>
 
-            {/* Cerrados Evolutivos */}
             <div className="mt-8 grid lg:grid-cols-2 gap-6">
               <PanelConToggle
                 title={`Evolutivos cerrados por Analista — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
@@ -398,48 +421,6 @@ export default function Reportes() {
                 labelA="Aplicación"
                 color="#fd006e"
                 defaultMode="chart"
-              />
-            </div>
-          </>
-        ) : (
-          <>
-            {/* Abiertos No Evolutivos */}
-            <div className="grid lg:grid-cols-2 gap-6">
-              <PanelConToggle
-                title={`Abiertos (no evolutivos) por Aplicación — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
-                rows={abiertos_noevo_por_app}
-                loading={loading}
-                labelA="Aplicación"
-                color="#398FFF"
-                defaultMode="chart"
-              />
-              <PanelConToggle
-                title={`Abiertos (no evolutivos) por Analista — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
-                rows={abiertos_noevo_por_analista}
-                loading={loading}
-                labelA="Analista"
-                color="#398FFF"
-                defaultMode="table"
-              />
-            </div>
-
-            {/* Abiertos Evolutivos */}
-            <div className="mt-8 grid lg:grid-cols-2 gap-6">
-              <PanelConToggle
-                title={`Abiertos (evolutivos) por Aplicación — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
-                rows={abiertos_evo_por_app}
-                loading={loading}
-                labelA="Aplicación"
-                color="#fd006e"
-                defaultMode="chart"
-              />
-              <PanelConToggle
-                title={`Abiertos (evolutivos) por Analista — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
-                rows={abiertos_evo_por_analista}
-                loading={loading}
-                labelA="Analista"
-                color="#fd006e"
-                defaultMode="table"
               />
             </div>
           </>
