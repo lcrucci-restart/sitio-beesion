@@ -47,22 +47,48 @@ const COLS = {
 // Tipo evolutivo
 const isEvo = (row) => NORM(row?.[COLS.tipo]) === "pedido de cambio";
 
-// parseo de fechas flexible
+/** ========= Parseo de fechas robusto =========
+ * Soporta:
+ *  - dd/mm/yyyy [hh:mm[:ss]] [AM|PM]
+ *  - dd-mm-yyyy [hh:mm[:ss]] [AM|PM]
+ *  - yyyy-mm-dd[T]hh:mm[:ss] (ISO-like)
+ */
 function parseDateMaybe(v) {
-  if (v instanceof Date) return v;
-  const s = (v || "").toString().trim();
+  if (!v) return null;
+  if (v instanceof Date && !Number.isNaN(v.getTime())) return v;
+
+  const s = String(v).trim().replace(/\s+/g, " ");
   if (!s) return null;
 
-  // dd/mm/yyyy [HH:MM]
-  const m = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:\s+(\d{1,2}):(\d{2}))?$/.exec(s);
+  // yyyy-mm-dd[ T]hh:mm[:ss]
+  const iso = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/;
+  let m = iso.exec(s);
   if (m) {
-    const d = +m[1], mo = +m[2] - 1, yy = +m[3]; const y = yy < 100 ? 2000 + yy : yy;
-    const H = +m[4] || 0, M = +m[5] || 0;
-    const dt = new Date(y, mo, d, H, M, 0, 0);
+    const y = +m[1], mo = +m[2]-1, d = +m[3];
+    const H = +(m[4] ?? 0), M = +(m[5] ?? 0), S = +(m[6] ?? 0);
+    const dt = new Date(y, mo, d, H, M, S, 0);
     return Number.isNaN(dt.getTime()) ? null : dt;
   }
-  const d2 = new Date(s);
-  return Number.isNaN(d2.getTime()) ? null : d2;
+
+  // dd/mm/yyyy o dd-mm-yyyy con opcional hora, segundos y AM/PM
+  const dmy = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM|am|pm)?)?$/;
+  m = dmy.exec(s);
+  if (m) {
+    const d = +m[1], mo = +m[2]-1;
+    const yy = +m[3]; const y = yy < 100 ? 2000 + yy : yy;
+    let H = +(m[4] ?? 0), M = +(m[5] ?? 0), S = +(m[6] ?? 0);
+    const ap = (m[7] || "").toUpperCase();
+
+    if (ap === "AM" && H === 12) H = 0;
+    if (ap === "PM" && H < 12) H += 12;
+
+    const dt = new Date(y, mo, d, H, M, S, 0);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+
+  // Último intento: que el motor lo interprete
+  const dt2 = new Date(s);
+  return Number.isNaN(dt2.getTime()) ? null : dt2;
 }
 
 function withinLastDays(date, days) {
