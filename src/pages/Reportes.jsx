@@ -6,34 +6,30 @@ import { readReporteAbiertos, readReporteCerrados } from "../lib/sheets";
 
 /** ================== CONFIG ================== */
 
-// Pestañas master normalizadas en tu Sheet
+// Masters normalizados
 const TAB_ABIERTOS = "Reporte Abiertos";
 const TAB_CERRADOS = "Reporte Cerrados";
 
-// Vistas (coinciden con valores ya normalizados en "Mesa asignada")
+// Vistas (valores ya normalizados en "Mesa asignada")
 const VIEWS = [
-  { key: "global",    label: "Global",    mesas: null }, // sin filtro = todas
-  // Beesion agrupa Nivel 1 / 2 / 3 (tu diccionario lo deja así)
-  { key: "beesion",   label: "Beesion",   mesas: new Set(["nivel 1", "nivel 2", "nivel 3"]) },
+  { key: "global",    label: "Global",    mesas: null },
+  { key: "beesion",   label: "Beesion",   mesas: new Set(["nivel 1","nivel 2","nivel 3"]) },
   { key: "tenfold",   label: "Tenfold",   mesas: new Set(["tenfold"]) },
   { key: "invgate",   label: "InvGate",   mesas: new Set(["invgate"]) },
   { key: "sharepoint",label: "SharePoint",mesas: new Set(["sharepoint"]) },
 ];
 
-// Nombres de columnas EXACTOS en las master normalizadas (GAS)
+// Columnas exactas
 const COLS = {
-  // comunes
   modulo:       "Módulo",
   agente:       "Agente asignado",
   tipo:         "Tipo",
   mesaAsignada: "Mesa asignada",
-  // abiertos
-  fecCre:       "Fecha de creación",
-  // cerrados
-  fecFin:       "Fecha fin",
+  fecCre:       "Fecha de creación", // Abiertos (tu sheet ya trae 30d)
+  fecFin:       "Fecha fin",         // Cerrados
 };
 
-// normalizador de strings (para comparar vistas/mesas con tildes, etc.)
+// normalizador
 const NORM = (s) =>
   (s ?? "")
     .toString()
@@ -42,16 +38,14 @@ const NORM = (s) =>
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "");
 
-// ¿es evolutivo?
+// Evolutivo
 const isEvo = (row) => NORM(row?.[COLS.tipo]) === "pedido de cambio";
 
-// parseo de fechas flexible
+// fecha → Date
 function parseDateMaybe(v) {
   if (v instanceof Date) return v;
   const s = (v || "").toString().trim();
   if (!s) return null;
-
-  // dd/mm/yyyy [HH:MM]
   const m = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:\s+(\d{1,2}):(\d{2}))?$/.exec(s);
   if (m) {
     const d = +m[1], mo = +m[2] - 1, yy = +m[3]; const y = yy < 100 ? 2000 + yy : yy;
@@ -63,6 +57,7 @@ function parseDateMaybe(v) {
   return Number.isNaN(d2.getTime()) ? null : d2;
 }
 
+// dentro de últimos N días
 function withinLastDays(date, days) {
   const d = parseDateMaybe(date);
   if (!d) return false;
@@ -71,7 +66,7 @@ function withinLastDays(date, days) {
   return d >= from && d <= now;
 }
 
-// group by simple
+// group by columna
 function groupCount(list, col) {
   const map = new Map();
   for (const r of list) {
@@ -81,42 +76,74 @@ function groupCount(list, col) {
   return Array.from(map.entries()).sort((a, b) => b[1] - a[1]).slice(0, 50);
 }
 
-// aplica filtro por VISTA (mesas)
+// dd/mm/yyyy
+function fmtDDMMYYYY(d) {
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+// group por fecha (dd/mm/yyyy)
+function groupCountByDate(list, dateCol) {
+  const map = new Map();
+  for (const r of list) {
+    const d = parseDateMaybe(r[dateCol]);
+    if (!d) continue;
+    const k = fmtDDMMYYYY(d);
+    map.set(k, (map.get(k) || 0) + 1);
+  }
+  // ordenar por fecha asc
+  return Array.from(map.entries())
+    .sort((a, b) => {
+      const pa = a[0].split("/").reverse().join("-");
+      const pb = b[0].split("/").reverse().join("-");
+      return pa < pb ? -1 : pa > pb ? 1 : 0;
+    });
+}
+
+// filtro por vista
 function filterByView(rows, view, mesaColName = COLS.mesaAsignada) {
-  if (!view?.mesas) return rows; // global
+  if (!view?.mesas) return rows;
   const allowed = view.mesas;
   return rows.filter((r) => allowed.has(NORM(r[mesaColName])));
 }
 
-/** ========== Componentes gráficos ligeros ========== */
-function BarChart({ rows, color = "#398FFF" }) {
+/** ========== Gráficos ========== */
+// Barras verticales simples (sin libs)
+function VerticalBarChart({ rows, color = "#398FFF", height = 180, showValues = true }) {
   const max = rows.reduce((m, [, c]) => Math.max(m, c), 1);
   return (
-    <div className="mt-3 space-y-2">
-      {rows.map(([name, count]) => (
-        <div key={name}>
-          <div className="flex justify-between text-sm">
-            <div className="truncate pr-2">{name}</div>
-            <div className="text-slate-500">{count}</div>
-          </div>
-          <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
-            <div className="h-full rounded-full" style={{ width: `${(count / max) * 100}%`, background: color }} />
-          </div>
-        </div>
-      ))}
+    <div className="mt-3">
+      <div className="flex items-end gap-3" style={{ height }}>
+        {rows.map(([name, count]) => {
+          const h = Math.round((count / max) * (height - 24)); // margen label
+          return (
+            <div key={name} className="flex flex-col items-center">
+              <div
+                className="w-8 rounded-t"
+                style={{ height: h, background: color }}
+                title={`${name}: ${count}`}
+              />
+              {showValues && <div className="text-xs mt-1">{count}</div>}
+              <div className="text-xs mt-1 w-10 truncate" title={name}>{name}</div>
+            </div>
+          );
+        })}
+      </div>
       {rows.length === 0 && <div className="text-sm text-slate-500">Sin datos</div>}
     </div>
   );
 }
 
-function TableList({ rows, loading, labelA }) {
+function TableList({ rows, loading, labelA, labelB = "Cantidad" }) {
   return (
     <div className="mt-3">
       <table className="min-w-full text-sm">
         <thead>
           <tr className="bg-[#E3F2FD]">
             <th className="text-left px-3 py-2">{labelA}</th>
-            <th className="text-right px-3 py-2">Cantidad (30d)</th>
+            <th className="text-right px-3 py-2">{labelB}</th>
           </tr>
         </thead>
         <tbody>
@@ -134,6 +161,7 @@ function TableList({ rows, loading, labelA }) {
   );
 }
 
+// Panel con toggle Chart/Tabla
 function PanelConToggle({ title, rows, loading, labelA, color = "#398FFF", defaultMode = "chart" }) {
   const [mode, setMode] = useState(defaultMode); // "chart" | "table"
   return (
@@ -159,9 +187,42 @@ function PanelConToggle({ title, rows, loading, labelA, color = "#398FFF", defau
       </div>
 
       {mode === "chart"
-        ? <BarChart rows={rows} color={color} />
+        ? <VerticalBarChart rows={rows} color={color} />
         : <TableList rows={rows} loading={loading} labelA={labelA} />
       }
+    </div>
+  );
+}
+
+// Panel dual: toggle interno entre "Analista" y "Aplicación" (unificado)
+function PanelDual({ title, rowsA, rowsB, loading, labelA = "Analista", labelB = "Aplicación", colorA="#398FFF", colorB="#398FFF" }) {
+  const [tab, setTab] = useState("A"); // "A" (analista) | "B" (aplicación)
+  const rows = tab === "A" ? rowsA : rowsB;
+  const color = tab === "A" ? colorA : colorB;
+
+  return (
+    <div className="rounded-2xl border-2 border-[#398FFF] p-6">
+      <div className="flex items-center justify-between gap-2">
+        <div className="font-semibold text-[#398FFF]">{title}</div>
+        <div className="inline-flex rounded-xl border-2 overflow-hidden border-[#398FFF]">
+          <button
+            onClick={() => setTab("A")}
+            className={`px-3 py-1.5 text-sm ${tab === "A" ? "bg-[#398FFF] text-white" : "text-[#398FFF]"}`}
+          >
+            {labelA}
+          </button>
+          <button
+            onClick={() => setTab("B")}
+            className={`px-3 py-1.5 text-sm ${tab === "B" ? "bg-[#398FFF] text-white" : "text-[#398FFF]"}`}
+          >
+            {labelB}
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-3" />
+      <VerticalBarChart rows={rows} color={color} />
+      <TableList rows={rows} loading={loading} labelA={tab === "A" ? labelA : labelB} />
     </div>
   );
 }
@@ -175,15 +236,15 @@ export default function Reportes() {
   const [rowsAbiertos, setRowsAbiertos] = useState([]);
   const [rowsCerrados, setRowsCerrados] = useState([]);
 
-  // selección de dataset (Abiertos / Cerrados) y View (Global / Beesion / Tenfold / InvGate / SharePoint)
+  // estado UI
   const [dataset, setDataset] = useState("cerrados"); // "cerrados" | "abiertos"
-  const [viewKey, setViewKey] = useState("beesion");  // default Beesion
+  const [viewKey, setViewKey] = useState("beesion");
   const view = useMemo(() => VIEWS.find(v => v.key === viewKey) || VIEWS[0], [viewKey]);
 
   useEffect(() => { if (hasGoogle()) initTokenClient(); }, []);
   const connect = async () => { await ensureToken(); setReady(true); };
 
-  // Carga de ambas pestañas master normalizadas
+  // Carga de datos
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -200,7 +261,7 @@ export default function Reportes() {
         setRowsAbiertos(Array.isArray(a.rows) ? a.rows : []);
         setRowsCerrados(Array.isArray(c.rows) ? c.rows : []);
 
-        // Avisos mínimos de columnas clave
+        // avisos mínimos
         const missingA = [];
         const headersA = a?.headers || [];
         if (!headersA.includes(COLS.mesaAsignada)) missingA.push(COLS.mesaAsignada);
@@ -227,24 +288,25 @@ export default function Reportes() {
     return () => { alive = false; };
   }, [ready]);
 
-  /** ====== Helpers específicos ====== */
+  /** ====== Transformaciones ====== */
 
-  // ----- ABIERTOS: filtramos por vista y por 30 días (Fecha de creación) -----
+  // --- ABIERTOS ---
+  // Tu sheet ya está limitado a 30d → no volvemos a filtrar por fecha.
   const abiertosByView = useMemo(() => filterByView(rowsAbiertos, view), [rowsAbiertos, viewKey]);
-  const abiertos30d = useMemo(
-    () => abiertosByView.filter((r) => withinLastDays(r[COLS.fecCre], 30)),
-    [abiertosByView]
-  );
-  const abiertosNoEvo = useMemo(() => abiertos30d.filter((r) => !isEvo(r)), [abiertos30d]);
-  const abiertosEvo   = useMemo(() => abiertos30d.filter((r) =>  isEvo(r)), [abiertos30d]);
+  const abiertosAll30d = abiertosByView;
+
+  const abiertosNoEvo = useMemo(() => abiertosAll30d.filter((r) => !isEvo(r)), [abiertosAll30d]);
+  const abiertosEvo   = useMemo(() => abiertosAll30d.filter((r) =>  isEvo(r)), [abiertosAll30d]);
+
   const abiertos_noevo_por_app = useMemo(() => groupCount(abiertosNoEvo, COLS.modulo), [abiertosNoEvo]);
   const abiertos_evo_por_app   = useMemo(() => groupCount(abiertosEvo,   COLS.modulo), [abiertosEvo]);
 
-  // ----- CERRADOS: filtramos por vista y por 30 días (Fecha fin) -----
+  const abiertos_por_fecha     = useMemo(() => groupCountByDate(abiertosAll30d, COLS.fecCre), [abiertosAll30d]);
+
+  // --- CERRADOS ---
   function getFechaFin(row) {
     const f1 = row[COLS.fecFin];
     if (f1 && String(f1).trim()) return f1;
-    // Fallbacks por si hay corridas viejas:
     const f2 = row["Fecha de solución"];
     if (f2 && String(f2).trim()) return f2;
     const f3 = row["Fecha de rechazo"];
@@ -253,15 +315,15 @@ export default function Reportes() {
   }
 
   const cerradosByView = useMemo(() => filterByView(rowsCerrados, view), [rowsCerrados, viewKey]);
-  const cerrados30d = useMemo(
-    () => cerradosByView.filter((r) => withinLastDays(getFechaFin(r), 30)),
-    [cerradosByView]
-  );
+  const cerrados30d = useMemo(() => cerradosByView.filter((r) => withinLastDays(getFechaFin(r), 30)), [cerradosByView]);
+
   const cerradosNoEvo = useMemo(() => cerrados30d.filter((r) => !isEvo(r)), [cerrados30d]);
   const cerradosEvo   = useMemo(() => cerrados30d.filter((r) =>  isEvo(r)), [cerrados30d]);
 
+  // unificados: por Analista y por Aplicación en el mismo panel (toggle)
   const cerrados_noevo_por_analista = useMemo(() => groupCount(cerradosNoEvo, COLS.agente), [cerradosNoEvo]);
   const cerrados_noevo_por_app      = useMemo(() => groupCount(cerradosNoEvo, COLS.modulo), [cerradosNoEvo]);
+
   const cerrados_evo_por_analista   = useMemo(() => groupCount(cerradosEvo,   COLS.agente), [cerradosEvo]);
   const cerrados_evo_por_app        = useMemo(() => groupCount(cerradosEvo,   COLS.modulo), [cerradosEvo]);
 
@@ -291,7 +353,7 @@ export default function Reportes() {
           <h2 className="text-2xl font-bold">Reportes — últimos 30 días</h2>
         </div>
 
-        {/* Controles: dataset + vista */}
+        {/* Controles */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
           <div className="inline-flex rounded-xl border-2 overflow-hidden border-[#398FFF]">
             <button
@@ -317,11 +379,11 @@ export default function Reportes() {
           </div>
         </div>
 
-        {/* Info head rápida */}
+        {/* Info */}
         <div className="text-sm text-slate-600 mb-6">
           {dataset === "abiertos" ? (
             <>
-              <b>Abiertos cargados:</b> {rowsAbiertos.length} &nbsp;|&nbsp; <b>Vista:</b> {VIEWS.find(v=>v.key===viewKey)?.label ?? "Global"} &nbsp;|&nbsp; <b>Abiertos filtrados (30d):</b> {abiertos30d.length}
+              <b>Abiertos cargados:</b> {rowsAbiertos.length} &nbsp;|&nbsp; <b>Vista:</b> {VIEWS.find(v=>v.key===viewKey)?.label ?? "Global"} &nbsp;|&nbsp; <b>Abiertos (vista, 30d ya en origen):</b> {abiertosAll30d.length}
             </>
           ) : (
             <>
@@ -333,49 +395,32 @@ export default function Reportes() {
         {/* ================== BLOQUES ================== */}
         {dataset === "cerrados" ? (
           <>
-            {/* Cerrados No Evolutivos */}
             <div className="grid lg:grid-cols-2 gap-6">
-              <PanelConToggle
-                title={`No evolutivos cerrados por Analista — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
-                rows={cerrados_noevo_por_analista}
+              <PanelDual
+                title={`Cerrados NO evolutivos — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
+                rowsA={cerrados_noevo_por_analista}
+                rowsB={cerrados_noevo_por_app}
                 loading={loading}
                 labelA="Analista"
-                color="#398FFF"
-                defaultMode="chart"
+                labelB="Aplicación"
+                colorA="#398FFF"
+                colorB="#398FFF"
               />
-              <PanelConToggle
-                title={`No evolutivos cerrados por Aplicación — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
-                rows={cerrados_noevo_por_app}
-                loading={loading}
-                labelA="Aplicación"
-                color="#398FFF"
-                defaultMode="chart"
-              />
-            </div>
-
-            {/* Cerrados Evolutivos */}
-            <div className="mt-8 grid lg:grid-cols-2 gap-6">
-              <PanelConToggle
-                title={`Evolutivos cerrados por Analista — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
-                rows={cerrados_evo_por_analista}
+              <PanelDual
+                title={`Cerrados EVOLUTIVOS — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
+                rowsA={cerrados_evo_por_analista}
+                rowsB={cerrados_evo_por_app}
                 loading={loading}
                 labelA="Analista"
-                color="#fd006e"
-                defaultMode="chart"
-              />
-              <PanelConToggle
-                title={`Evolutivos cerrados por Aplicación — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
-                rows={cerrados_evo_por_app}
-                loading={loading}
-                labelA="Aplicación"
-                color="#fd006e"
-                defaultMode="chart"
+                labelB="Aplicación"
+                colorA="#fd006e"
+                colorB="#fd006e"
               />
             </div>
           </>
         ) : (
           <>
-            {/* Abiertos (solo por Aplicación) */}
+            {/* Abiertos por aplicación (no-evo / evo) */}
             <div className="grid lg:grid-cols-2 gap-6">
               <PanelConToggle
                 title={`Abiertos (no evolutivos) por Aplicación — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
@@ -392,6 +437,18 @@ export default function Reportes() {
                 labelA="Aplicación"
                 color="#fd006e"
                 defaultMode="chart"
+              />
+            </div>
+
+            {/* Abiertos por fecha (tabla + gráfico vertical simple) */}
+            <div className="mt-8">
+              <PanelConToggle
+                title={`Abiertos por fecha (30d) — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
+                rows={abiertos_por_fecha}
+                loading={loading}
+                labelA="Fecha (dd/mm/aaaa)"
+                color="#7c3aed"
+                defaultMode="table"
               />
             </div>
           </>
