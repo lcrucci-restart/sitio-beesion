@@ -110,23 +110,47 @@ function filterByView(rows, view, mesaColName = COLS.mesaAsignada) {
 }
 
 /** ========== Gráficos ========== */
-// Barras verticales simples (sin libs)
-function VerticalBarChart({ rows, color = "#398FFF", height = 180, showValues = true }) {
+// Barras verticales responsivas con scroll horizontal si hay muchas barras
+function VerticalBarChart({
+  rows,
+  color = "#398FFF",
+  height = 220,
+  showValues = true
+}) {
+  const n = rows.length;
+  // ancho de barra adaptativo (más barras => más angostas), clamp [6..32]
+  const barW = Math.max(6, Math.min(32, Math.floor(480 / Math.max(1, Math.sqrt(n)))));
+  const gap = 10;
+  // ancho mínimo interno para permitir scroll si no entra
+  const minInner = n * (barW + gap);
+
+  const rotateLabels = n > 18;
+
   const max = rows.reduce((m, [, c]) => Math.max(m, c), 1);
+
   return (
-    <div className="mt-3">
-      <div className="flex items-end gap-3" style={{ height }}>
+    <div className="mt-3 overflow-x-auto">
+      <div
+        className="flex items-end"
+        style={{ height, minWidth: Math.max(minInner, 320), gap: `${gap}px` }}
+      >
         {rows.map(([name, count]) => {
-          const h = Math.round((count / max) * (height - 24)); // margen label
+          const h = Math.round((count / max) * (height - 36)); // headroom para labels
           return (
             <div key={name} className="flex flex-col items-center">
               <div
-                className="w-8 rounded-t"
-                style={{ height: h, background: color }}
+                className="rounded-t"
+                style={{ width: barW, height: h, background: color }}
                 title={`${name}: ${count}`}
               />
-              {showValues && <div className="text-xs mt-1">{count}</div>}
-              <div className="text-xs mt-1 w-10 truncate" title={name}>{name}</div>
+              {showValues && <div className="text-[10px] mt-1 leading-none">{count}</div>}
+              <div
+                className={`text-[10px] mt-1 leading-tight w-[80px] ${rotateLabels ? "origin-top-left -rotate-45 translate-y-2" : "truncate text-center w-[72px]"}`}
+                title={name}
+                style={{ whiteSpace: rotateLabels ? "nowrap" : "nowrap" }}
+              >
+                {name}
+              </div>
             </div>
           );
         })}
@@ -195,7 +219,15 @@ function PanelConToggle({ title, rows, loading, labelA, color = "#398FFF", defau
 }
 
 // Panel dual: toggle interno entre "Analista" y "Aplicación" (unificado)
-function PanelDual({ title, rowsA, rowsB, loading, labelA = "Analista", labelB = "Aplicación", colorA="#398FFF", colorB="#398FFF" }) {
+function PanelDual({
+  title,
+  rowsA, rowsB,
+  loading,
+  labelA = "Analista",
+  labelB = "Aplicación",
+  colorA="#398FFF",
+  colorB="#398FFF"
+}) {
   const [tab, setTab] = useState("A"); // "A" (analista) | "B" (aplicación)
   const rows = tab === "A" ? rowsA : rowsB;
   const color = tab === "A" ? colorA : colorB;
@@ -291,9 +323,8 @@ export default function Reportes() {
   /** ====== Transformaciones ====== */
 
   // --- ABIERTOS ---
-  // Tu sheet ya está limitado a 30d → no volvemos a filtrar por fecha.
   const abiertosByView = useMemo(() => filterByView(rowsAbiertos, view), [rowsAbiertos, viewKey]);
-  const abiertosAll30d = abiertosByView;
+  const abiertosAll30d = abiertosByView; // ya viene 30d en origen
 
   const abiertosNoEvo = useMemo(() => abiertosAll30d.filter((r) => !isEvo(r)), [abiertosAll30d]);
   const abiertosEvo   = useMemo(() => abiertosAll30d.filter((r) =>  isEvo(r)), [abiertosAll30d]);
@@ -320,7 +351,6 @@ export default function Reportes() {
   const cerradosNoEvo = useMemo(() => cerrados30d.filter((r) => !isEvo(r)), [cerrados30d]);
   const cerradosEvo   = useMemo(() => cerrados30d.filter((r) =>  isEvo(r)), [cerrados30d]);
 
-  // unificados: por Analista y por Aplicación en el mismo panel (toggle)
   const cerrados_noevo_por_analista = useMemo(() => groupCount(cerradosNoEvo, COLS.agente), [cerradosNoEvo]);
   const cerrados_noevo_por_app      = useMemo(() => groupCount(cerradosNoEvo, COLS.modulo), [cerradosNoEvo]);
 
@@ -395,7 +425,8 @@ export default function Reportes() {
         {/* ================== BLOQUES ================== */}
         {dataset === "cerrados" ? (
           <>
-            <div className="grid lg:grid-cols-2 gap-6">
+            {/* Apilados a lo ancho completo */}
+            <div className="space-y-8">
               <PanelDual
                 title={`Cerrados NO evolutivos — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
                 rowsA={cerrados_noevo_por_analista}
