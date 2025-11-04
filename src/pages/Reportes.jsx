@@ -2,12 +2,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { hasGoogle, initTokenClient, ensureToken, isSignedIn } from "../lib/googleAuth";
 import { BarChart2 } from "lucide-react";
-import { readReporteAbiertos } from "../lib/sheets";
+import { readReporteAbiertos, readReporteCerrados } from "../lib/sheets";
 
 /** ================== CONFIG ================== */
 
-// Pestaña master normalizada en tu Sheet
+// Pestañas master normalizadas en tu Sheet
 const TAB_ABIERTOS = "Reporte Abiertos";
+const TAB_CERRADOS = "Reporte Cerrados";
 
 // Vistas (coinciden con valores ya normalizados en "Mesa asignada")
 const VIEWS = [
@@ -19,12 +20,17 @@ const VIEWS = [
   { key: "sharepoint",label: "SharePoint",mesas: new Set(["sharepoint"]) },
 ];
 
-// Nombres de columnas EXACTOS en la master normalizada (GAS)
+// Nombres de columnas EXACTOS en las master normalizadas (GAS)
 const COLS = {
+  // comunes
   modulo:       "Módulo",
+  agente:       "Agente asignado",
   tipo:         "Tipo",
   mesaAsignada: "Mesa asignada",
+  // abiertos
   fecCre:       "Fecha de creación",
+  // cerrados
+  fecFin:       "Fecha fin",
 };
 
 // normalizador de strings (para comparar vistas/mesas con tildes, etc.)
@@ -167,15 +173,17 @@ export default function Reportes() {
   const [warn, setWarn]     = useState(null);
 
   const [rowsAbiertos, setRowsAbiertos] = useState([]);
+  const [rowsCerrados, setRowsCerrados] = useState([]);
 
-  // selección de vista (Global / Beesion / Tenfold / InvGate / SharePoint)
+  // selección de dataset (Abiertos / Cerrados) y View (Global / Beesion / Tenfold / InvGate / SharePoint)
+  const [dataset, setDataset] = useState("cerrados"); // "cerrados" | "abiertos"
   const [viewKey, setViewKey] = useState("beesion");  // default Beesion
   const view = useMemo(() => VIEWS.find(v => v.key === viewKey) || VIEWS[0], [viewKey]);
 
   useEffect(() => { if (hasGoogle()) initTokenClient(); }, []);
   const connect = async () => { await ensureToken(); setReady(true); };
 
-  // Carga única de "Reporte Abiertos"
+  // Carga de ambas pestañas master normalizadas
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -183,12 +191,14 @@ export default function Reportes() {
       setLoading(true);
       setWarn(null);
       try {
-        const a = await readReporteAbiertos().catch(() => ({ rows: [], headers: [] }));
+        const [a, c] = await Promise.all([
+          readReporteAbiertos().catch(() => ({ rows: [], headers: [] })),
+          readReporteCerrados().catch(() => ({ rows: [], headers: [] })),
+        ]);
         if (!alive) return;
 
-        // Guardamos todas las filas
-        const all = Array.isArray(a.rows) ? a.rows : [];
-        setRowsAbiertos(all);
+        setRowsAbiertos(Array.isArray(a.rows) ? a.rows : []);
+        setRowsCerrados(Array.isArray(c.rows) ? c.rows : []);
 
         // Avisos mínimos de columnas clave
         const missingA = [];
@@ -197,9 +207,18 @@ export default function Reportes() {
         if (!headersA.includes(COLS.modulo))       missingA.push(COLS.modulo);
         if (!headersA.includes(COLS.fecCre))       missingA.push(COLS.fecCre);
 
-        if (missingA.length) setWarn(`Revisá columnas en "${TAB_ABIERTOS}": faltan ${missingA.join(", ")}`);
+        const missingC = [];
+        const headersC = c?.headers || [];
+        if (!headersC.includes(COLS.mesaAsignada)) missingC.push(COLS.mesaAsignada);
+        if (!headersC.includes(COLS.modulo))       missingC.push(COLS.modulo);
+        if (!headersC.includes(COLS.fecFin))       missingC.push(COLS.fecFin);
+
+        const msgs = [];
+        if (missingA.length) msgs.push(`"${TAB_ABIERTOS}": faltan ${missingA.join(", ")}`);
+        if (missingC.length) msgs.push(`"${TAB_CERRADOS}": faltan ${missingC.join(", ")}`);
+        if (msgs.length) setWarn(`Revisá columnas en ${msgs.join(" — ")}`);
       } catch (e) {
-        if (alive) setWarn("No pude leer Reporte Abiertos (permisos / env / Google API).");
+        if (alive) setWarn("No pude leer Reporte Abiertos/Cerrados (permisos / env / Google API).");
         console.error(e);
       } finally {
         if (alive) setLoading(false);
@@ -210,26 +229,41 @@ export default function Reportes() {
 
   /** ====== Helpers específicos ====== */
 
-  // 1) Filtramos por vista (usa Mesa asignada)
+  // ----- ABIERTOS: filtramos por vista y por 30 días (Fecha de creación) -----
   const abiertosByView = useMemo(() => filterByView(rowsAbiertos, view), [rowsAbiertos, viewKey]);
-
-  // 2) Seguridad: volvemos a filtrar 30d por Fecha de creación (aunque ya venga del CSV)
   const abiertos30d = useMemo(
     () => abiertosByView.filter((r) => withinLastDays(r[COLS.fecCre], 30)),
     [abiertosByView]
   );
-
-  // 3) Split evolutivo / no evolutivo
   const abiertosNoEvo = useMemo(() => abiertos30d.filter((r) => !isEvo(r)), [abiertos30d]);
   const abiertosEvo   = useMemo(() => abiertos30d.filter((r) =>  isEvo(r)), [abiertos30d]);
+  const abiertos_noevo_por_app = useMemo(() => groupCount(abiertosNoEvo, COLS.modulo), [abiertosNoEvo]);
+  const abiertos_evo_por_app   = useMemo(() => groupCount(abiertosEvo,   COLS.modulo), [abiertosEvo]);
 
-  // 4) Agregados por Aplicación (Módulo)
-  const abiertos_noevo_por_app = useMemo(
-    () => groupCount(abiertosNoEvo, COLS.modulo), [abiertosNoEvo]
+  // ----- CERRADOS: filtramos por vista y por 30 días (Fecha fin) -----
+  function getFechaFin(row) {
+    const f1 = row[COLS.fecFin];
+    if (f1 && String(f1).trim()) return f1;
+    // Fallbacks por si hay corridas viejas:
+    const f2 = row["Fecha de solución"];
+    if (f2 && String(f2).trim()) return f2;
+    const f3 = row["Fecha de rechazo"];
+    if (f3 && String(f3).trim()) return f3;
+    return "";
+  }
+
+  const cerradosByView = useMemo(() => filterByView(rowsCerrados, view), [rowsCerrados, viewKey]);
+  const cerrados30d = useMemo(
+    () => cerradosByView.filter((r) => withinLastDays(getFechaFin(r), 30)),
+    [cerradosByView]
   );
-  const abiertos_evo_por_app = useMemo(
-    () => groupCount(abiertosEvo, COLS.modulo), [abiertosEvo]
-  );
+  const cerradosNoEvo = useMemo(() => cerrados30d.filter((r) => !isEvo(r)), [cerrados30d]);
+  const cerradosEvo   = useMemo(() => cerrados30d.filter((r) =>  isEvo(r)), [cerrados30d]);
+
+  const cerrados_noevo_por_analista = useMemo(() => groupCount(cerradosNoEvo, COLS.agente), [cerradosNoEvo]);
+  const cerrados_noevo_por_app      = useMemo(() => groupCount(cerradosNoEvo, COLS.modulo), [cerradosNoEvo]);
+  const cerrados_evo_por_analista   = useMemo(() => groupCount(cerradosEvo,   COLS.agente), [cerradosEvo]);
+  const cerrados_evo_por_app        = useMemo(() => groupCount(cerradosEvo,   COLS.modulo), [cerradosEvo]);
 
   /** ================== UI ================== */
 
@@ -239,7 +273,9 @@ export default function Reportes() {
         <div className="mx-auto max-w-7xl p-8">
           <div className="rounded-2xl border-2 border-[#398FFF] p-6">
             <div className="text-lg font-semibold text-[#398FFF]">Conectar Google</div>
-            <p className="text-sm mt-1">Necesito permiso para leer <b>{TAB_ABIERTOS}</b>.</p>
+            <p className="text-sm mt-1">
+              Necesito permiso para leer <b>{TAB_ABIERTOS}</b> y <b>{TAB_CERRADOS}</b>.
+            </p>
             <button onClick={connect} className="mt-3 px-4 py-2 rounded-xl bg-[#398FFF] text-white">Conectar</button>
           </div>
         </div>
@@ -252,44 +288,114 @@ export default function Reportes() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex items-center gap-2 text-[#398FFF] mb-4">
           <BarChart2 className="w-5 h-5" />
-          <h2 className="text-2xl font-bold">Reportes — abiertos en los últimos 30 días</h2>
+          <h2 className="text-2xl font-bold">Reportes — últimos 30 días</h2>
         </div>
 
-        {/* Controles: vista */}
-        <div className="flex flex-wrap gap-2 mb-4">
-          {VIEWS.map(v => (
-            <button key={v.key}
-              onClick={()=>setViewKey(v.key)}
-              className={`px-3 py-1.5 rounded-xl border-2 ${viewKey===v.key ? "bg-[#398FFF] text-white border-[#398FFF]" : "text-[#398FFF] border-[#398FFF]"}`}>
-              {v.label}
-            </button>
-          ))}
+        {/* Controles: dataset + vista */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+          <div className="inline-flex rounded-xl border-2 overflow-hidden border-[#398FFF]">
+            <button
+              onClick={()=>setDataset("cerrados")}
+              className={`px-3 py-1.5 text-sm ${dataset==="cerrados"?"bg-[#398FFF] text-white":"text-[#398FFF]"}`}
+              title="Ver Cerrados (30d por Fecha fin)"
+            >Cerrados</button>
+            <button
+              onClick={()=>setDataset("abiertos")}
+              className={`px-3 py-1.5 text-sm ${dataset==="abiertos"?"bg-[#398FFF] text-white":"text-[#398FFF]"}`}
+              title="Ver Abiertos (30d por Fecha de creación)"
+            >Abiertos</button>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {VIEWS.map(v => (
+              <button key={v.key}
+                onClick={()=>setViewKey(v.key)}
+                className={`px-3 py-1.5 rounded-xl border-2 ${viewKey===v.key ? "bg-[#398FFF] text-white border-[#398FFF]" : "text-[#398FFF] border-[#398FFF]"}`}>
+                {v.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Info head rápida */}
         <div className="text-sm text-slate-600 mb-6">
-          <b>Abiertos cargados:</b> {rowsAbiertos.length} &nbsp;|&nbsp; <b>Vista:</b> {VIEWS.find(v=>v.key===viewKey)?.label ?? "Global"} &nbsp;|&nbsp; <b>Abiertos filtrados (30d):</b> {abiertos30d.length}
+          {dataset === "abiertos" ? (
+            <>
+              <b>Abiertos cargados:</b> {rowsAbiertos.length} &nbsp;|&nbsp; <b>Vista:</b> {VIEWS.find(v=>v.key===viewKey)?.label ?? "Global"} &nbsp;|&nbsp; <b>Abiertos filtrados (30d):</b> {abiertos30d.length}
+            </>
+          ) : (
+            <>
+              <b>Cerrados cargados:</b> {rowsCerrados.length} &nbsp;|&nbsp; <b>Vista:</b> {VIEWS.find(v=>v.key===viewKey)?.label ?? "Global"} &nbsp;|&nbsp; <b>Cerrados filtrados (30d):</b> {cerrados30d.length}
+            </>
+          )}
         </div>
 
-        {/* Bloques: solo por Aplicación */}
-        <div className="grid lg:grid-cols-2 gap-6">
-          <PanelConToggle
-            title={`Abiertos (no evolutivos) por Aplicación — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
-            rows={abiertos_noevo_por_app}
-            loading={loading}
-            labelA="Aplicación"
-            color="#398FFF"
-            defaultMode="chart"
-          />
-          <PanelConToggle
-            title={`Abiertos (evolutivos) por Aplicación — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
-            rows={abiertos_evo_por_app}
-            loading={loading}
-            labelA="Aplicación"
-            color="#fd006e"
-            defaultMode="chart"
-          />
-        </div>
+        {/* ================== BLOQUES ================== */}
+        {dataset === "cerrados" ? (
+          <>
+            {/* Cerrados No Evolutivos */}
+            <div className="grid lg:grid-cols-2 gap-6">
+              <PanelConToggle
+                title={`No evolutivos cerrados por Analista — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
+                rows={cerrados_noevo_por_analista}
+                loading={loading}
+                labelA="Analista"
+                color="#398FFF"
+                defaultMode="chart"
+              />
+              <PanelConToggle
+                title={`No evolutivos cerrados por Aplicación — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
+                rows={cerrados_noevo_por_app}
+                loading={loading}
+                labelA="Aplicación"
+                color="#398FFF"
+                defaultMode="chart"
+              />
+            </div>
+
+            {/* Cerrados Evolutivos */}
+            <div className="mt-8 grid lg:grid-cols-2 gap-6">
+              <PanelConToggle
+                title={`Evolutivos cerrados por Analista — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
+                rows={cerrados_evo_por_analista}
+                loading={loading}
+                labelA="Analista"
+                color="#fd006e"
+                defaultMode="chart"
+              />
+              <PanelConToggle
+                title={`Evolutivos cerrados por Aplicación — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
+                rows={cerrados_evo_por_app}
+                loading={loading}
+                labelA="Aplicación"
+                color="#fd006e"
+                defaultMode="chart"
+              />
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Abiertos (solo por Aplicación) */}
+            <div className="grid lg:grid-cols-2 gap-6">
+              <PanelConToggle
+                title={`Abiertos (no evolutivos) por Aplicación — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
+                rows={abiertos_noevo_por_app}
+                loading={loading}
+                labelA="Aplicación"
+                color="#398FFF"
+                defaultMode="chart"
+              />
+              <PanelConToggle
+                title={`Abiertos (evolutivos) por Aplicación — ${VIEWS.find(v=>v.key===viewKey)?.label || ""}`}
+                rows={abiertos_evo_por_app}
+                loading={loading}
+                labelA="Aplicación"
+                color="#fd006e"
+                defaultMode="chart"
+              />
+            </div>
+          </>
+        )}
 
         {warn && (
           <div className="mt-6 rounded-xl border-2 border-[#fd006e] text-[#fd006e] bg-white px-3 py-2 text-sm">
