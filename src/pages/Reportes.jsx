@@ -10,14 +10,15 @@ import { readReporteAbiertos, readReporteCerrados } from "../lib/sheets";
 const TAB_ABIERTOS = "Reporte Abiertos";
 const TAB_CERRADOS = "Reporte Cerrados";
 
-// Vistas (valores ya normalizados en "Mesa asignada")
 const VIEWS = [
-  { key: "global",    label: "Global",    mesas: null },
-  { key: "beesion",   label: "Beesion",   mesas: new Set(["nivel 1","nivel 2","nivel 3"]) },
-  { key: "tenfold",   label: "Tenfold",   mesas: new Set(["tenfold"]) },
-  { key: "invgate",   label: "InvGate",   mesas: new Set(["invgate"]) },
-  { key: "sharepoint",label: "SharePoint",mesas: new Set(["sharepoint"]) },
+  { key: "global",    label: "Global",    project: null },
+  { key: "beesion",   label: "Beesion",   project: "beesion" },
+  { key: "tenfold",   label: "Tenfold",   project: "tenfold" },
+  { key: "invgate",   label: "InvGate",   project: "invgate" },
+  { key: "sharepoint",label: "SharePoint",project: "sharepoint" },
 ];
+
+
 
 // Columnas exactas
 const COLS = {
@@ -56,6 +57,43 @@ function parseDateMaybe(v) {
   const d2 = new Date(s);
   return Number.isNaN(d2.getTime()) ? null : d2;
 }
+
+function projectFromMesa(raw) {
+  const norm = NORM(raw);
+
+  if (norm.includes("beesion"))   return "beesion";
+  if (norm.includes("tenfold"))   return "tenfold";
+  if (norm.includes("invgate"))   return "invgate";
+  if (norm.includes("sharepoint"))return "sharepoint";
+
+  // otros proyectos (si querés distinguirlos)
+  if (norm.includes("catu"))      return "catu";
+  if (norm.includes("ing_red") || norm.includes("ing red")) return "ing_red";
+
+  return "otros";
+}
+
+function mesaNormalizadaFront(raw) {
+  const norm = NORM(raw);
+
+  // Casos BEESION
+  if (norm.includes("beesion")) {
+    if (norm.includes("nivel product")) return "Product";
+    if (norm.includes("nivel 1"))       return "Nivel 1";
+    if (norm.includes("nivel 2"))       return "Nivel 2";
+    if (norm.includes("nivel 3"))       return "Nivel 3";
+  }
+
+  // Otros según tu diccionario
+  if (norm.includes("catu"))                  return "CATU";
+  if (norm.includes("ing_red") || norm.includes("ing red")) return "Ing Red";
+  if (norm.includes("tenfold"))               return "Tenfold";
+  if (norm.includes("invgate"))               return "Invgate";
+
+  // Fallback: devolvés lo que vino
+  return (raw ?? "").toString().trim();
+}
+
 
 // dentro de últimos N días
 function withinLastDays(date, days) {
@@ -104,10 +142,15 @@ function groupCountByDate(list, dateCol) {
 
 // filtro por vista
 function filterByView(rows, view, mesaColName = COLS.mesaAsignada) {
-  if (!view?.mesas) return rows;
-  const allowed = view.mesas;
-  return rows.filter((r) => allowed.has(NORM(r[mesaColName])));
+  if (!view || !view.project) return rows; // Global o sin proyecto → todo
+
+  return rows.filter((r) => {
+    const proj = projectFromMesa(r[mesaColName]);
+    return proj === view.project;
+  });
 }
+
+
 
 /** ========== Gráficos ========== */
 // Barras verticales responsivas con scroll horizontal si hay muchas barras
@@ -323,8 +366,13 @@ export default function Reportes() {
   /** ====== Transformaciones ====== */
 
   // --- ABIERTOS ---
+  // en lugar de asumir que viene 30d:
   const abiertosByView = useMemo(() => filterByView(rowsAbiertos, view), [rowsAbiertos, viewKey]);
-  const abiertosAll30d = abiertosByView; // ya viene 30d en origen
+
+  const abiertosAll30d = useMemo(
+    () => abiertosByView.filter(r => withinLastDays(r[COLS.fecCre], 30)),
+    [abiertosByView]
+  );
 
   const abiertosNoEvo = useMemo(() => abiertosAll30d.filter((r) => !isEvo(r)), [abiertosAll30d]);
   const abiertosEvo   = useMemo(() => abiertosAll30d.filter((r) =>  isEvo(r)), [abiertosAll30d]);
@@ -336,13 +384,7 @@ export default function Reportes() {
 
   // --- CERRADOS ---
   function getFechaFin(row) {
-    const f1 = row[COLS.fecFin];
-    if (f1 && String(f1).trim()) return f1;
-    const f2 = row["Fecha de solución"];
-    if (f2 && String(f2).trim()) return f2;
-    const f3 = row["Fecha de rechazo"];
-    if (f3 && String(f3).trim()) return f3;
-    return "";
+    return row[COLS.fecFin] || "";
   }
 
   const cerradosByView = useMemo(() => filterByView(rowsCerrados, view), [rowsCerrados, viewKey]);
