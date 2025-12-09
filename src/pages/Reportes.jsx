@@ -367,28 +367,41 @@ export default function Reportes() {
 
   // --- ABIERTOS ---
   // en lugar de asumir que viene 30d:
-  const abiertosByView = useMemo(() => filterByView(rowsAbiertos, view), [rowsAbiertos, viewKey]);
-
-  const abiertosAll30d = useMemo(
-    () => abiertosByView.filter(r => withinLastDays(r[COLS.fecCre], 30)),
-    [abiertosByView]
+  const abiertosByView = useMemo(
+    () => filterByView(rowsAbiertos, view),
+    [rowsAbiertos, viewKey, view]
   );
 
-  const abiertosNoEvo = useMemo(() => abiertosAll30d.filter((r) => !isEvo(r)), [abiertosAll30d]);
-  const abiertosEvo   = useMemo(() => abiertosAll30d.filter((r) =>  isEvo(r)), [abiertosAll30d]);
+  const abiertosAll30d = abiertosByView;
+
+  const abiertosNoEvo = useMemo(
+    () => abiertosAll30d.filter((r) => !isEvo(r)),
+    [abiertosAll30d]
+  );
+  const abiertosEvo = useMemo(
+    () => abiertosAll30d.filter((r) =>  isEvo(r)),
+    [abiertosAll30d]
+  );
 
   const abiertos_noevo_por_app = useMemo(() => groupCount(abiertosNoEvo, COLS.modulo), [abiertosNoEvo]);
   const abiertos_evo_por_app   = useMemo(() => groupCount(abiertosEvo,   COLS.modulo), [abiertosEvo]);
 
-  const abiertos_por_fecha     = useMemo(() => groupCountByDate(abiertosAll30d, COLS.fecCre), [abiertosAll30d]);
+  const abiertos_por_fecha = useMemo(
+  () => groupCountByDate(abiertosAll30d, COLS.fecCre),
+  [abiertosAll30d]
+);
 
-  // --- CERRADOS ---
-  function getFechaFin(row) {
-    return row[COLS.fecFin] || "";
-  }
+// --- CERRADOS ---
+  const cerradosByView = useMemo(
+    () => filterByView(rowsCerrados, view),
+    [rowsCerrados, viewKey, view]
+  );
 
-  const cerradosByView = useMemo(() => filterByView(rowsCerrados, view), [rowsCerrados, viewKey]);
-  const cerrados30d = useMemo(() => cerradosByView.filter((r) => withinLastDays(getFechaFin(r), 30)), [cerradosByView]);
+  // SI el reporte Cerrados también viene ya a 30d, mismo criterio:
+  const cerrados30d = cerradosByView;
+
+  // si preferís dejarlo explícito en el nombre:
+  const cerradosFiltrados = cerrados30d;
 
   const cerradosNoEvo = useMemo(() => cerrados30d.filter((r) => !isEvo(r)), [cerrados30d]);
   const cerradosEvo   = useMemo(() => cerrados30d.filter((r) =>  isEvo(r)), [cerrados30d]);
