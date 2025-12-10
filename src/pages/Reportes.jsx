@@ -112,7 +112,7 @@ function fmtDDMMYYYY(d) {
   return `${dd}/${mm}/${yyyy}`;
 }
 
-// group por fecha (dd/mm/yyyy)
+// Agrupa por fecha (día calendario) y ordena cronológicamente
 function groupCountByDate(list, dateCol) {
   const map = new Map(); // key = timestamp a medianoche, value = count
 
@@ -120,7 +120,7 @@ function groupCountByDate(list, dateCol) {
     const d = parseDateMaybe(r[dateCol]);
     if (!d) continue;
 
-    // normalizamos al día (00:00) para que no influyan horas
+    // normalizamos al día (00:00)
     const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
     const key = day.getTime(); // número
 
@@ -132,8 +132,7 @@ function groupCountByDate(list, dateCol) {
     .map(([ts, count]) => [fmtDDMMYYYY(new Date(ts)), count]);
 }
 
-
-// filtro por vista
+// filtro por vista (igual que ya tenías)
 function filterByView(rows, view, mesaColName = COLS.mesaAsignada) {
   if (!view || !view.project) return rows; // Global o sin proyecto → todo
 
@@ -358,13 +357,12 @@ export default function Reportes() {
   /** ====== Transformaciones ====== */
 
   // --- ABIERTOS ---
-  // en lugar de asumir que viene 30d:
   const abiertosByView = useMemo(
     () => filterByView(rowsAbiertos, view),
     [rowsAbiertos, viewKey, view]
   );
 
-  const abiertosAll30d = abiertosByView;
+  const abiertosAll30d = abiertosByView; // el origen ya viene a 30d
 
   const abiertosNoEvo = useMemo(
     () => abiertosAll30d.filter((r) => !isEvo(r)),
@@ -375,45 +373,85 @@ export default function Reportes() {
     [abiertosAll30d]
   );
 
-  const abiertos_noevo_por_app = useMemo(() => groupCount(abiertosNoEvo, COLS.modulo), [abiertosNoEvo]);
-  const abiertos_evo_por_app   = useMemo(() => groupCount(abiertosEvo,   COLS.modulo), [abiertosEvo]);
+  const abiertos_noevo_por_app = useMemo(
+    () => groupCount(abiertosNoEvo, COLS.modulo),
+    [abiertosNoEvo]
+  );
+  const abiertos_evo_por_app   = useMemo(
+    () => groupCount(abiertosEvo,   COLS.modulo),
+    [abiertosEvo]
+  );
 
   const abiertos_por_fecha = useMemo(
-  () => groupCountByDate(abiertosAll30d, COLS.fecCre),
-  [abiertosAll30d]
-);
+    () => groupCountByDate(abiertosAll30d, COLS.fecCre),
+    [abiertosAll30d]
+  );
 
 useEffect(() => {
-  if (dataset !== "abiertos") return;
+    if (dataset !== "abiertos") return;
 
-  console.log("DEBUG — Abiertos por fecha (vista:", viewKey, ")");
-  console.log("Total filas en abiertosAll30d:", abiertosAll30d.length);
-  abiertos_por_fecha.forEach(([fecha, cant]) => {
-    console.log(`${fecha} => ${cant}`);
-  });
+    console.log("===== DEBUG Reportes/Abiertos =====");
+    console.log("Vista:", viewKey);
+    console.log("rowsAbiertos (raw):", rowsAbiertos.length);
+    console.log("abiertosAll30d (después de vista):", abiertosAll30d.length);
 
-  if (abiertos_por_fecha.length) {
-    const first = abiertos_por_fecha[0][0];
-    const last  = abiertos_por_fecha[abiertos_por_fecha.length - 1][0];
-    console.log("Rango fechas agrupadas:", first, "→", last);
-  }
-}, [dataset, viewKey, abiertosAll30d, abiertos_por_fecha]);
+    const totalAgrupado = abiertos_por_fecha.reduce((acc, [, cant]) => acc + cant, 0);
+    console.log("Suma de cantidades por fecha:", totalAgrupado);
+
+    // Fechas inválidas (no parseables)
+    const invalidSamples = [];
+    let invalidCount = 0;
+    const seen = new Set();
+
+    for (const r of abiertosAll30d) {
+      const raw = r[COLS.fecCre];
+      const d = parseDateMaybe(raw);
+      if (!d) {
+        invalidCount++;
+        const asStr = String(raw);
+        if (!seen.has(asStr) && invalidSamples.length < 10) {
+          seen.add(asStr);
+          invalidSamples.push(asStr);
+        }
+      }
+    }
+
+    console.log("Filas con fecha NO parseable:", invalidCount);
+    if (invalidSamples.length) {
+      console.log("Ejemplos de fechas no parseables:", invalidSamples);
+    }
+
+    console.log("Detalle por fecha:");
+    abiertos_por_fecha.forEach(([fecha, cant]) => {
+      console.log(`${fecha} => ${cant}`);
+    });
+
+    if (abiertos_por_fecha.length) {
+      const first = abiertos_por_fecha[0][0];
+      const last  = abiertos_por_fecha[abiertos_por_fecha.length - 1][0];
+      console.log("Rango fechas agrupadas:", first, "→", last);
+    }
+    console.log("===== FIN DEBUG =====");
+  }, [dataset, viewKey, rowsAbiertos, abiertosAll30d, abiertos_por_fecha]);
 
 
 // --- CERRADOS ---
-  const cerradosByView = useMemo(
+const cerradosByView = useMemo(
     () => filterByView(rowsCerrados, view),
     [rowsCerrados, viewKey, view]
   );
 
-  // SI el reporte Cerrados también viene ya a 30d, mismo criterio:
   const cerrados30d = cerradosByView;
-
-  // si preferís dejarlo explícito en el nombre:
   const cerradosFiltrados = cerrados30d;
 
-  const cerradosNoEvo = useMemo(() => cerrados30d.filter((r) => !isEvo(r)), [cerrados30d]);
-  const cerradosEvo   = useMemo(() => cerrados30d.filter((r) =>  isEvo(r)), [cerrados30d]);
+  const cerradosNoEvo = useMemo(
+    () => cerrados30d.filter((r) => !isEvo(r)),
+    [cerrados30d]
+  );
+  const cerradosEvo   = useMemo(
+    () => cerrados30d.filter((r) =>  isEvo(r)),
+    [cerrados30d]
+  );
 
   const cerrados_noevo_por_analista = useMemo(() => groupCount(cerradosNoEvo, COLS.agente), [cerradosNoEvo]);
   const cerrados_noevo_por_app      = useMemo(() => groupCount(cerradosNoEvo, COLS.modulo), [cerradosNoEvo]);
