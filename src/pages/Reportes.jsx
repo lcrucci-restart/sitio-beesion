@@ -43,20 +43,38 @@ const NORM = (s) =>
 const isEvo = (row) => NORM(row?.[COLS.tipo]) === "pedido de cambio";
 
 // fecha → Date
+// fecha → Date (acepta "dd/mm/yyyy", "dd-mm-yyyy", con o sin hora, con o sin coma)
 function parseDateMaybe(v) {
   if (v instanceof Date) return v;
-  const s = (v || "").toString().trim();
+
+  let s = (v || "").toString().trim();
   if (!s) return null;
-  const m = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:\s+(\d{1,2}):(\d{2}))?$/.exec(s);
+
+  // Normalizar: sacar comas entre fecha y hora, colapsar espacios
+  // Ej: "13/11/2025, 9:07" -> "13/11/2025 9:07"
+  s = s.replace(/,/g, " ");
+  s = s.replace(/\s+/g, " ").trim();
+
+  // dd/mm/yyyy [hh:mm] [opcional :ss]
+  const m = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/.exec(s);
   if (m) {
-    const d = +m[1], mo = +m[2] - 1, yy = +m[3]; const y = yy < 100 ? 2000 + yy : yy;
-    const H = +m[4] || 0, M = +m[5] || 0;
-    const dt = new Date(y, mo, d, H, M, 0, 0);
+    const d  = +m[1];
+    const mo = +m[2] - 1;
+    const yy = +m[3];
+    const y  = yy < 100 ? 2000 + yy : yy;
+    const H  = +m[4] || 0;
+    const M  = +m[5] || 0;
+    const S  = +m[6] || 0;
+
+    const dt = new Date(y, mo, d, H, M, S, 0);
     return Number.isNaN(dt.getTime()) ? null : dt;
   }
+
+  // fallback por si algún día viene en ISO tipo "2025-11-13T09:07:00"
   const d2 = new Date(s);
   return Number.isNaN(d2.getTime()) ? null : d2;
 }
+
 
 function projectFromMesa(raw) {
   const norm = NORM(raw);
