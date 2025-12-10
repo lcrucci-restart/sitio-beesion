@@ -122,23 +122,26 @@ function fmtDDMMYYYY(d) {
   return `${dd}/${mm}/${yyyy}`;
 }
 
-// group por fecha (dd/mm/yyyy)
+// Agrupa por día calendario y ordena cronológicamente usando timestamp, no strings
 function groupCountByDate(list, dateCol) {
-  const map = new Map();
+  const map = new Map(); // key = timestamp a medianoche, value = count
+
   for (const r of list) {
     const d = parseDateMaybe(r[dateCol]);
     if (!d) continue;
-    const k = fmtDDMMYYYY(d);
-    map.set(k, (map.get(k) || 0) + 1);
+
+    // normalizamos al día (00:00) para que no influyan horas
+    const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const key = day.getTime(); // número
+
+    map.set(key, (map.get(key) || 0) + 1);
   }
-  // ordenar por fecha asc
+
   return Array.from(map.entries())
-    .sort((a, b) => {
-      const pa = a[0].split("/").reverse().join("-");
-      const pb = b[0].split("/").reverse().join("-");
-      return pa < pb ? -1 : pa > pb ? 1 : 0;
-    });
+    .sort((a, b) => a[0] - b[0]) // orden cronológico real
+    .map(([ts, count]) => [fmtDDMMYYYY(new Date(ts)), count]);
 }
+
 
 // filtro por vista
 function filterByView(rows, view, mesaColName = COLS.mesaAsignada) {
