@@ -94,16 +94,6 @@ function mesaNormalizadaFront(raw) {
   return (raw ?? "").toString().trim();
 }
 
-
-// dentro de últimos N días
-function withinLastDays(date, days) {
-  const d = parseDateMaybe(date);
-  if (!d) return false;
-  const now = new Date();
-  const from = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-  return d >= from && d <= now;
-}
-
 // group by columna
 function groupCount(list, col) {
   const map = new Map();
@@ -122,7 +112,7 @@ function fmtDDMMYYYY(d) {
   return `${dd}/${mm}/${yyyy}`;
 }
 
-// Agrupa por día calendario y ordena cronológicamente usando timestamp, no strings
+// group por fecha (dd/mm/yyyy)
 function groupCountByDate(list, dateCol) {
   const map = new Map(); // key = timestamp a medianoche, value = count
 
@@ -152,7 +142,6 @@ function filterByView(rows, view, mesaColName = COLS.mesaAsignada) {
     return proj === view.project;
   });
 }
-
 
 
 /** ========== Gráficos ========== */
@@ -393,6 +382,23 @@ export default function Reportes() {
   () => groupCountByDate(abiertosAll30d, COLS.fecCre),
   [abiertosAll30d]
 );
+
+useEffect(() => {
+  if (dataset !== "abiertos") return;
+
+  console.log("DEBUG — Abiertos por fecha (vista:", viewKey, ")");
+  console.log("Total filas en abiertosAll30d:", abiertosAll30d.length);
+  abiertos_por_fecha.forEach(([fecha, cant]) => {
+    console.log(`${fecha} => ${cant}`);
+  });
+
+  if (abiertos_por_fecha.length) {
+    const first = abiertos_por_fecha[0][0];
+    const last  = abiertos_por_fecha[abiertos_por_fecha.length - 1][0];
+    console.log("Rango fechas agrupadas:", first, "→", last);
+  }
+}, [dataset, viewKey, abiertosAll30d, abiertos_por_fecha]);
+
 
 // --- CERRADOS ---
   const cerradosByView = useMemo(
