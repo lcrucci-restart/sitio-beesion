@@ -1,6 +1,6 @@
 // src/components/ProgresoTable.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { RefreshCcw, Pencil, Save, X, XCircle, ChevronDown, ChevronRight } from "lucide-react";
+import { RefreshCcw, Save, X, XCircle, ChevronDown, ChevronRight } from "lucide-react";
 import { hasGoogle, initTokenClient, ensureToken, isSignedIn } from "../lib/googleAuth";
 
 const SHEET_ID =
@@ -29,19 +29,19 @@ const HDR = {
   marca:       "Marca",             // celeste/amarillo/""
   etiqueta:    "Etiqueta",          // nombre libre
   etqMadre:    "Etiqueta Madre",    // "Sí"/""
-  etqColor:    "Etiqueta Color",    // opcional: violeta | rosa | verde-oscuro | verde-claro | naranja
-  escalamiento:"Escalamiento",      // 👈 nueva columna manual
+  etqColor:    "Etiqueta Color",    // color lógico
+  escalamiento:"Escalamiento",      // manual: "Posible N3" / ""
 };
 
 const MARKS = {
   amarillo: {
-    label: "Pruebas",               // 👈 antes “Pruebas de Usuario”
+    label: "Pruebas",
     bg: "#FFFDE7",
     border: "#FBC02D",
     text: "#8d6e00",
   },
   celeste:  {
-    label: "Deploy",                // 👈 antes “Implementación”
+    label: "Deploy",
     bg: "#E3F2FD",
     border: "#398FFF",
     text: "#1c4e9a",
@@ -55,7 +55,11 @@ const LABEL_PALETTE = {
   "verde-oscuro":  { bg: "#E6F4EA", border:"#2E7D32", text:"#1B5E20" },
   "verde-claro":   { bg: "#ECFDF5", border:"#43A047", text:"#2E7D32" },
   "naranja":       { bg: "#FFF3E0", border:"#FB8C00", text:"#EF6C00" },
+  "azul-oscuro":   { bg: "#E3F2FD", border:"#1E3A8A", text:"#1E3A8A" },
+  "gris":          { bg: "#F5F5F5", border:"#9E9E9E", text:"#424242" },
 };
+
+const PALETTE_KEYS = Object.keys(LABEL_PALETTE);
 
 // normaliza strings
 const norm = (s = "") =>
@@ -67,9 +71,8 @@ const normColor = (s="") => norm(s).replace(/\s+/g,"-");
 
 // color hash por nombre (si no hay columna de color)
 const hashPaletteKey = (name) => {
-  const keys = ["violeta","rosa","verde-oscuro","verde-claro","naranja"];
   const code = Math.abs(name.split("").reduce((a,c)=>a+c.charCodeAt(0),0));
-  return keys[code % keys.length];
+  return PALETTE_KEYS[code % PALETTE_KEYS.length];
 };
 
 export default function ProgresoTable() {
@@ -78,7 +81,6 @@ export default function ProgresoTable() {
   const [msg, setMsg]            = useState(null);
   const [collapsed, setCollapsed]= useState(true);
 
-  // columnas ocultas
   const [showHiddenCols, setShowHiddenCols] = useState(false);
 
   // vista: invgates normales vs evolutivos
@@ -89,12 +91,12 @@ export default function ProgresoTable() {
   const [rows, setRows]          = useState([]); // objetos mapeados por headers
   const [selectedId, setSelectedId] = useState(null);
 
-  // filtros (SIN Tipo)
-  const [fEstado, setFEstado]       = useState([]);
-  const [fPrioridad, setFPrioridad] = useState([]);
-  const [fMesa, setFMesa]           = useState([]);
+  // filtros con select (uno por campo)
+  const [fEstado, setFEstado]       = useState("");
+  const [fPrioridad, setFPrioridad] = useState("");
+  const [fMesa, setFMesa]           = useState("");
 
-  // edición
+  // edición por fila (Ticket N3 + Comentario), sin botón "Editar": se dispara al tocar la celda
   const [editId, setEditId]     = useState(null);
   const [draft, setDraft]       = useState({ ticketN3: "", comentario: "" });
 
@@ -125,7 +127,7 @@ export default function ProgresoTable() {
     } catch (e) { console.error(e); alert("No se pudo conectar a Google."); }
   };
 
-  // gid -> nombre de pestaña (si hace falta)
+  // gid -> nombre de pestaña
   useEffect(() => {
     let stop = false;
     const resolveTab = async () => {
@@ -190,7 +192,7 @@ export default function ProgresoTable() {
       };
 
       const out = values.slice(1)
-        .filter(r => r && r.some(c => String(c).trim() !== "")) // evita filas 100% vacías
+        .filter(r => r && r.some(c => String(c).trim() !== "")) // evita filas vacías
         .map((r, k) => ({
           _row:        k + 2,
           id:          i.nro       >=0 ? (r[i.nro]       ?? "") : "",
@@ -273,22 +275,22 @@ export default function ProgresoTable() {
   const optsPrioridad = useMemo(()=>uniq(base.map(r=>r.prioridad)), [base]);
   const optsMesa      = useMemo(()=>uniq(base.map(r=>r.mesa)),      [base]);
 
-  const toggleSel = (setter) => (value) => {
-    setter((prev) => prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]);
-  };
-
-  // aplicar filtros
+  // aplicar filtros (select simple)
   const filtered = useMemo(() => {
     let data = [...base];
-    if (fEstado.length)    data = data.filter(r => fEstado.includes(r.estado));
-    if (fPrioridad.length) data = data.filter(r => fPrioridad.includes(r.prioridad));
-    if (fMesa.length)      data = data.filter(r => fMesa.includes(r.mesa));
+    if (fEstado)    data = data.filter(r => r.estado === fEstado);
+    if (fPrioridad) data = data.filter(r => r.prioridad === fPrioridad);
+    if (fMesa)      data = data.filter(r => r.mesa === fMesa);
     return data;
   }, [base, fEstado, fPrioridad, fMesa]);
 
-  const clearFilters = () => { setFEstado([]); setFPrioridad([]); setFMesa([]); };
+  const clearFilters = () => {
+    setFEstado("");
+    setFPrioridad("");
+    setFMesa("");
+  };
 
-  // edición Ticket N3 / Comentario
+  // edición Ticket N3 / Comentario (activada al tocar la celda)
   const startEdit = (r) => {
     setEditId(r.id);
     setDraft({ ticketN3: r.ticketN3 || "", comentario: r.comentario || "" });
@@ -415,10 +417,8 @@ export default function ProgresoTable() {
       const cells = [];
       const current = (row.etiqueta || "").trim();
 
-      // quitar marca de madre en la propia fila
       cells.push({ rowNumber: row._row, colIndex0: i.etqMadre, value: "" });
 
-      // borrar etiqueta en todas las filas que la usen
       if (current) {
         for (const r of rows) {
           if ((r.etiqueta || "").trim() === current) {
@@ -500,7 +500,7 @@ export default function ProgresoTable() {
 
   const selectedRow = useMemo(() => rows.find(x => x.id === selectedId) || null, [rows, selectedId]);
 
-  // UI
+  // UI de estados iniciales
   if (!SHEET_ID) {
     return <div className="rounded-2xl border-2 border-[#fd006e] p-4 bg-white text-[#fd006e]">
       Falta configurar <code>VITE_PROG_SHEET_ID</code> o <code>VITE_SHEETS_SPREADSHEET_ID</code>.
@@ -583,10 +583,9 @@ export default function ProgresoTable() {
         <div className="mt-3 text-sm">Seleccioná una fila para ver acciones rápidas.</div>
       </div>
 
-      {/* Barra superior de acciones para la fila seleccionada */}
-      {selectedId && (() => {
-        const rowSel = rows.find(x => x.id === selectedId);
-        if (!rowSel) return null;
+      {/* Barra de acciones para la fila seleccionada */}
+      {selectedRow && (() => {
+        const rowSel = selectedRow;
         const labelStyle = getLabelStyle(rowSel.etiqueta);
         return (
           <div className="px-4 py-3 border-b bg-slate-50 flex flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap">
@@ -720,52 +719,55 @@ export default function ProgresoTable() {
         );
       })()}
 
-      {/* Filtros — SIN "Tipo" */}
-      <div className="px-4 py-3 border-b grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {/* ESTADO */}
-        <div>
-          <div className="text-sm font-medium mb-2">Estado</div>
-          <div className="rounded-lg border-2 p-2" style={{ borderColor:"#398FFF" }}>
+      {/* Filtros en línea (select) */}
+      <div className="px-4 py-3 border-b flex flex-wrap gap-4 items-end">
+        <div className="flex flex-col min-w-[160px]">
+          <label className="text-sm font-medium mb-1">Estado</label>
+          <select
+            className="border-2 rounded-lg px-2 py-1.5 text-sm"
+            style={{ borderColor:"#398FFF" }}
+            value={fEstado}
+            onChange={(e)=>setFEstado(e.target.value)}
+          >
+            <option value="">Todos</option>
             {optsEstado.map(o => (
-              <label key={o} className="flex items-center gap-2 text-sm py-1">
-                <input type="checkbox" checked={fEstado.includes(o)} onChange={()=>toggleSel(setFEstado)(o)} />
-                <span>{o}</span>
-              </label>
+              <option key={o} value={o}>{o}</option>
             ))}
-            {optsEstado.length === 0 && <div className="text-xs text-slate-400">Sin opciones</div>}
-          </div>
+          </select>
         </div>
 
-        {/* PRIORIDAD */}
-        <div>
-          <div className="text-sm font-medium mb-2">Prioridad</div>
-          <div className="rounded-lg border-2 p-2" style={{ borderColor:"#398FFF" }}>
+        <div className="flex flex-col min-w-[160px]">
+          <label className="text-sm font-medium mb-1">Prioridad</label>
+          <select
+            className="border-2 rounded-lg px-2 py-1.5 text-sm"
+            style={{ borderColor:"#398FFF" }}
+            value={fPrioridad}
+            onChange={(e)=>setFPrioridad(e.target.value)}
+          >
+            <option value="">Todas</option>
             {optsPrioridad.map(o => (
-              <label key={o} className="flex items-center gap-2 text-sm py-1">
-                <input type="checkbox" checked={fPrioridad.includes(o)} onChange={()=>toggleSel(setFPrioridad)(o)} />
-                <span>{o}</span>
-              </label>
+              <option key={o} value={o}>{o}</option>
             ))}
-            {optsPrioridad.length === 0 && <div className="text-xs text-slate-400">Sin opciones</div>}
-          </div>
+          </select>
         </div>
 
-        {/* MESA */}
-        <div>
-          <div className="text-sm font-medium mb-2">Mesa</div>
-          <div className="rounded-lg border-2 p-2" style={{ borderColor:"#398FFF" }}>
+        <div className="flex flex-col min-w-[160px]">
+          <label className="text-sm font-medium mb-1">Mesa</label>
+          <select
+            className="border-2 rounded-lg px-2 py-1.5 text-sm"
+            style={{ borderColor:"#398FFF" }}
+            value={fMesa}
+            onChange={(e)=>setFMesa(e.target.value)}
+          >
+            <option value="">Todas</option>
             {optsMesa.map(o => (
-              <label key={o} className="flex items-center gap-2 text-sm py-1">
-                <input type="checkbox" checked={fMesa.includes(o)} onChange={()=>toggleSel(setFMesa)(o)} />
-                <span>{o}</span>
-              </label>
+              <option key={o} value={o}>{o}</option>
             ))}
-            {optsMesa.length === 0 && <div className="text-xs text-slate-400">Sin opciones</div>}
-          </div>
+          </select>
         </div>
       </div>
 
-      {/* Tabla — compacta */}
+      {/* Tabla */}
       <div className={`overflow-auto ${collapsed ? "max-h-[60vh]" : ""}`}>
         <table className="min-w-full text-[13px] leading-tight">
           <thead style={{ background: "#E3F2FD" }}>
@@ -849,26 +851,32 @@ export default function ProgresoTable() {
                       : <span className="text-neutral-400">—</span>}
                   </td>
 
-                  <td className="px-3 py-1 align-middle">
+                  {/* Ticket N3 editable tocando la celda */}
+                  <td
+                    className="px-3 py-1 align-middle"
+                    onClick={(e)=>{ e.stopPropagation(); startEdit(r); }}
+                  >
                     {editId === r.id ? (
                       <input
                         className="w-40 rounded-md border px-2 py-1"
                         value={draft.ticketN3}
                         onChange={(e)=>setDraft(d => ({...d, ticketN3: e.target.value}))}
-                        onClick={(e)=>e.stopPropagation()}
                         placeholder="Ticket N3…"
                       />
                     ) : (r.ticketN3 || <span className="text-neutral-400">—</span>)}
                   </td>
 
+                  {/* Comentario editable sólo si se muestran columnas ocultas */}
                   {showHiddenCols && (
-                    <td className="px-3 py-1 align-middle">
+                    <td
+                      className="px-3 py-1 align-middle"
+                      onClick={(e)=>{ e.stopPropagation(); startEdit(r); }}
+                    >
                       {editId === r.id ? (
                         <input
                           className="w-64 rounded-md border px-2 py-1"
                           value={draft.comentario}
                           onChange={(e)=>setDraft(d => ({...d, comentario: e.target.value}))}
-                          onClick={(e)=>e.stopPropagation()}
                           placeholder="Comentario…"
                         />
                       ) : (r.comentario || <span className="text-neutral-400">—</span>)}
@@ -876,7 +884,7 @@ export default function ProgresoTable() {
                   )}
 
                   <td className="px-3 py-1 align-middle whitespace-nowrap" onClick={(e)=>e.stopPropagation()}>
-                    {editId === r.id ? (
+                    {editId === r.id && editId === r.id ? (
                       <div className="flex items-center gap-2 flex-nowrap overflow-x-auto whitespace-nowrap">
                         <button onClick={()=>saveEdit(r)} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-white" style={{ background:"#398FFF" }}>
                           <Save className="w-4 h-4" /> Guardar
@@ -887,10 +895,6 @@ export default function ProgresoTable() {
                       </div>
                     ) : (
                       <div className="flex items-center gap-2 flex-nowrap overflow-x-auto whitespace-nowrap">
-                        <button onClick={()=>startEdit(r)} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border-2" style={{ borderColor:"#398FFF", color:"#398FFF" }}>
-                          <Pencil className="w-4 h-4" /> Editar
-                        </button>
-
                         {/* Marca colores */}
                         <button
                           onClick={()=>markRow(r, "amarillo")}
@@ -922,89 +926,6 @@ export default function ProgresoTable() {
                             ? "Quitar posible N3"
                             : "Posible N3"}
                         </button>
-
-                        {/* Etiqueta madre */}
-                        {!isTrue(r.etqMadre) ? (
-                          <button
-                            onClick={()=>{
-                              const currentName = (r.etiqueta || "").trim();
-                              const currentKey = LABEL_PALETTE[normColor(r.etqColor || "")] ? normColor(r.etqColor) : "violeta";
-                              setLabelModal({
-                                open:true,
-                                row: r,
-                                name: currentName,
-                                colorKey: currentKey,
-                              });
-                            }}
-                            className="px-3 py-1.5 rounded-lg border-2"
-                            style={{ borderColor: "#7E57C2", color: "#7E57C2" }}
-                          >
-                            Crear Etiqueta
-                          </button>
-                        ) : (
-                          <button
-                            onClick={()=>removeLabelOwner(r)}
-                            className="px-3 py-1.5 rounded-lg border-2"
-                            style={{ borderColor: "#7E57C2", color: "#7E57C2" }}
-                          >
-                            Quitar Etiqueta
-                          </button>
-                        )}
-
-                        {/* Asignar a etiqueta */}
-                        {!isTrue(r.etqMadre) && (
-                          assignRowId === r.id ? (
-                            <div className="flex items-center gap-2">
-                              <select
-                                className="border rounded-lg px-2 py-1"
-                                value={assignTo}
-                                onChange={(e)=>setAssignTo(e.target.value)}
-                              >
-                                <option value="">Seleccionar etiqueta…</option>
-                                {labelsAll.map(l => (
-                                  <option key={l.name} value={l.name}>{l.name}</option>
-                                ))}
-                              </select>
-                              <button
-                                onClick={()=> assignToLabel(r, assignTo)}
-                                className="px-3 py-1.5 rounded-lg border-2"
-                                style={{ borderColor: "#7E57C2", color: "#7E57C2" }}
-                                disabled={!assignTo}
-                              >
-                                Asignar
-                              </button>
-                              <button
-                                onClick={()=>{ setAssignRowId(null); setAssignTo(""); }}
-                                className="px-3 py-1.5 rounded-lg border-2 border-neutral-400 text-neutral-600"
-                              >
-                                Cancelar
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={()=>{
-                                if (labelsAll.length === 0) return toast("Primero creá al menos una etiqueta (madre).");
-                                setAssignRowId(r.id);
-                                setAssignTo("");
-                              }}
-                              className="px-3 py-1.5 rounded-lg border-2"
-                              style={{ borderColor: "#7E57C2", color: "#7E57C2" }}
-                              title="Asignar a Etiqueta"
-                            >
-                              Asignar a Etiqueta
-                            </button>
-                          )
-                        )}
-
-                        {/* Quitar etiqueta si tiene */}
-                        {!isTrue(r.etqMadre) && String(r.etiqueta || "").trim() && (
-                          <button
-                            onClick={()=>clearLabel(r)}
-                            className="px-3 py-1.5 rounded-lg border-2 border-neutral-400 text-neutral-600"
-                          >
-                            Quitar etiqueta
-                          </button>
-                        )}
                       </div>
                     )}
                   </td>
@@ -1015,7 +936,7 @@ export default function ProgresoTable() {
             {filtered.length === 0 && (
               <tr>
                 <td
-                  colSpan={showHiddenCols ? 13 : 10}
+                  colSpan={showHiddenCols ? 14 : 10}
                   className="px-4 py-6 text-center text-sm"
                 >
                   Sin resultados (ajustá filtros).
@@ -1115,7 +1036,7 @@ export default function ProgresoTable() {
                 value={labelModal.colorKey}
                 onChange={(e)=>setLabelModal(m => ({ ...m, colorKey: e.target.value }))}
               >
-                {Object.keys(LABEL_PALETTE).map(key => (
+                {PALETTE_KEYS.map(key => (
                   <option key={key} value={key}>{key}</option>
                 ))}
               </select>
@@ -1141,7 +1062,7 @@ export default function ProgresoTable() {
               <button
                 onClick={async () => {
                   const nm = (labelModal.name || "").trim();
-                  if (!nm) return; // no crees nada si está vacío
+                  if (!nm) return;
                   await createLabelOwner(labelModal.row, nm, labelModal.colorKey);
                   setLabelModal({ open:false, row:null, name:"", colorKey:"violeta" });
                 }}
