@@ -3,6 +3,9 @@ import { ensureToken } from "./googleAuth";
 
 const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
 
+console.log("[PROD DEBUG] ENV.REP_ID:", ENV.REP_ID);
+console.log("[PROD DEBUG] ENV.FALLBACK_SHEET_ID:", ENV.FALLBACK_SHEET_ID);
+
 /* ───────────────────────── ENV / fallbacks ───────────────────────── */
 
 const ENV = {
