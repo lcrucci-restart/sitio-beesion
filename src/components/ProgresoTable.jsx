@@ -30,11 +30,22 @@ const HDR = {
   etiqueta:    "Etiqueta",          // nombre libre
   etqMadre:    "Etiqueta Madre",    // "Sí"/""
   etqColor:    "Etiqueta Color",    // opcional: violeta | rosa | verde-oscuro | verde-claro | naranja
+  escalamiento:"Escalamiento",      // 👈 nueva columna manual
 };
 
 const MARKS = {
-  amarillo: { label: "Pruebas de Usuario", bg: "#FFFDE7", border: "#FBC02D", text: "#8d6e00" },
-  celeste:  { label: "Implementación",     bg: "#E3F2FD", border: "#398FFF", text: "#1c4e9a" },
+  amarillo: {
+    label: "Pruebas",               // 👈 antes “Pruebas de Usuario”
+    bg: "#FFFDE7",
+    border: "#FBC02D",
+    text: "#8d6e00",
+  },
+  celeste:  {
+    label: "Deploy",                // 👈 antes “Implementación”
+    bg: "#E3F2FD",
+    border: "#398FFF",
+    text: "#1c4e9a",
+  },
 };
 
 // Paleta de colores para etiquetas
@@ -67,6 +78,9 @@ export default function ProgresoTable() {
   const [msg, setMsg]            = useState(null);
   const [collapsed, setCollapsed]= useState(true);
 
+  // columnas ocultas
+  const [showHiddenCols, setShowHiddenCols] = useState(false);
+
   // vista: invgates normales vs evolutivos
   const [dataset, setDataset]    = useState("inv"); // "inv" | "evo"
 
@@ -90,6 +104,14 @@ export default function ProgresoTable() {
 
   // expandibles Etiquetas
   const [expandedLabels, setExpandedLabels] = useState(()=> new Set());
+
+  // modal para crear etiqueta madre
+  const [labelModal, setLabelModal] = useState({
+    open: false,
+    row: null,
+    name: "",
+    colorKey: "violeta",
+  });
 
   const toast = (t) => { setMsg(t); setTimeout(()=>setMsg(null), 2200); };
 
@@ -164,31 +186,33 @@ export default function ProgresoTable() {
         etiqueta:    idx(HDR.etiqueta),
         etqMadre:    idx(HDR.etqMadre),
         etqColor:    idx(HDR.etqColor),
+        escalamiento:idx(HDR.escalamiento),
       };
 
       const out = values.slice(1)
         .filter(r => r && r.some(c => String(c).trim() !== "")) // evita filas 100% vacías
         .map((r, k) => ({
-          _row: k + 2,
-          id:           i.nro       >=0 ? (r[i.nro]       ?? "") : "",
-          asunto:       i.asunto    >=0 ? (r[i.asunto]    ?? "") : "",
-          usuario:      i.usuario   >=0 ? (r[i.usuario]   ?? "") : "",
-          descripcion:  i.descripcion>=0 ? (r[i.descripcion]?? "") : "",
-          fecha:        i.fecha     >=0 ? (r[i.fecha]     ?? "") : "",
-          aging:        i.aging     >=0 ? (r[i.aging]     ?? "") : "",
-          prioridad:    i.prioridad >=0 ? (r[i.prioridad] ?? "") : "",
-          estado:       i.estado    >=0 ? (r[i.estado]    ?? "") : "",
-          mesa:         i.mesa      >=0 ? (r[i.mesa]      ?? "") : "",
-          agente:       i.agente    >=0 ? (r[i.agente]    ?? "") : "",
-          modulo:       i.modulo    >=0 ? (r[i.modulo]    ?? "") : "",
-          tipo:         i.tipo      >=0 ? (r[i.tipo]      ?? "") : "",
-          ticketN3:     i.ticketN3  >=0 ? (r[i.ticketN3]  ?? "") : "",
-          comentario:   i.comentario>=0 ? (r[i.comentario]?? "") : "",
-          marca:        i.marca     >=0 ? (r[i.marca]     ?? "") : "",
-          etiqueta:     i.etiqueta  >=0 ? (r[i.etiqueta]  ?? "") : "",
-          etqMadre:     i.etqMadre  >=0 ? (r[i.etqMadre]  ?? "") : "",
-          etqColor:     i.etqColor  >=0 ? (r[i.etqColor]  ?? "") : "",
-          _colIndex: i,
+          _row:        k + 2,
+          id:          i.nro       >=0 ? (r[i.nro]       ?? "") : "",
+          asunto:      i.asunto    >=0 ? (r[i.asunto]    ?? "") : "",
+          usuario:     i.usuario   >=0 ? (r[i.usuario]   ?? "") : "",
+          descripcion: i.descripcion>=0 ? (r[i.descripcion]?? "") : "",
+          fecha:       i.fecha     >=0 ? (r[i.fecha]     ?? "") : "",
+          aging:       i.aging     >=0 ? (r[i.aging]     ?? "") : "",
+          prioridad:   i.prioridad >=0 ? (r[i.prioridad] ?? "") : "",
+          estado:      i.estado    >=0 ? (r[i.estado]    ?? "") : "",
+          mesa:        i.mesa      >=0 ? (r[i.mesa]      ?? "") : "",
+          agente:      i.agente    >=0 ? (r[i.agente]    ?? "") : "",
+          modulo:      i.modulo    >=0 ? (r[i.modulo]    ?? "") : "",
+          tipo:        i.tipo      >=0 ? (r[i.tipo]      ?? "") : "",
+          ticketN3:    i.ticketN3  >=0 ? (r[i.ticketN3]  ?? "") : "",
+          comentario:  i.comentario>=0 ? (r[i.comentario]?? "") : "",
+          marca:       i.marca     >=0 ? (r[i.marca]     ?? "") : "",
+          etiqueta:    i.etiqueta  >=0 ? (r[i.etiqueta]  ?? "") : "",
+          etqMadre:    i.etqMadre  >=0 ? (r[i.etqMadre]  ?? "") : "",
+          etqColor:    i.etqColor  >=0 ? (r[i.etqColor]  ?? "") : "",
+          escalamiento:i.escalamiento>=0 ? (r[i.escalamiento] ?? "") : "",
+          _colIndex:   i,
         }));
 
       setRows(out);
@@ -300,6 +324,24 @@ export default function ProgresoTable() {
     }
   };
 
+  // Escalamiento (Posible N3)
+  const toggleEscalamiento = async (r) => {
+    try {
+      const i = r._colIndex;
+      if (typeof i.escalamiento !== "number" || i.escalamiento < 0) {
+        return toast("No encuentro la columna 'Escalamiento' en la hoja.");
+      }
+      const current = String(r.escalamiento || "").trim();
+      const nextVal = current === "Posible N3" ? "" : "Posible N3";
+      await writeCells([{ rowNumber: r._row, colIndex0: i.escalamiento, value: nextVal }]);
+      setRows(prev => prev.map(x => x.id===r.id ? { ...x, escalamiento: nextVal } : x));
+      toast(nextVal ? "Marcado como posible N3 ✓" : "Escalamiento limpiado ✓");
+    } catch (e) {
+      console.error(e);
+      toast("No pude actualizar Escalamiento.");
+    }
+  };
+
   // ======== Etiquetas ========
 
   // dueñas de etiqueta (madres)
@@ -331,64 +373,74 @@ export default function ProgresoTable() {
     return LABEL_PALETTE[key];
   };
 
-  // crear/quitar etiqueta madre en una fila (con cascada al quitar)
-  const setLabelOwner = async (row, makeOwner) => {
+  // crear etiqueta madre (usando modal)
+  const createLabelOwner = async (row, name, colorKey) => {
+    try {
+      const i = row._colIndex;
+      if (typeof i.etqMadre !== "number" || i.etqMadre < 0) return toast("Falta 'Etiqueta Madre' en la hoja.");
+      if (typeof i.etiqueta !== "number" || i.etiqueta < 0) return toast("Falta 'Etiqueta' en la hoja.");
+
+      const cleanName = (name || "").trim();
+      if (!cleanName) return;
+
+      const key = LABEL_PALETTE[colorKey] ? colorKey : "violeta";
+
+      // colisión de dueña con mismo nombre
+      const clash = labelsAll.find(l => l.name === cleanName && l.ownerId !== row.id);
+      if (clash) return toast(`Ya existe etiqueta "${cleanName}" definida por ${clash.ownerId}.`);
+
+      const cells = [];
+      cells.push({ rowNumber: row._row, colIndex0: i.etqMadre, value: "Sí" });
+      cells.push({ rowNumber: row._row, colIndex0: i.etiqueta, value: cleanName });
+      if (typeof i.etqColor === "number" && i.etqColor >= 0) {
+        cells.push({ rowNumber: row._row, colIndex0: i.etqColor, value: key });
+      }
+      await writeCells(cells);
+
+      setRows(prev => prev.map(x => x.id===row.id ? { ...x, etqMadre:"Sí", etiqueta:cleanName, etqColor:key } : x));
+      toast("Etiqueta creada ✓");
+    } catch (e) {
+      console.error(e);
+      toast("No pude actualizar la etiqueta.");
+    }
+  };
+
+  // quitar etiqueta madre y limpiar hijas
+  const removeLabelOwner = async (row) => {
     try {
       const i = row._colIndex;
       if (typeof i.etqMadre !== "number" || i.etqMadre < 0) return toast("Falta 'Etiqueta Madre' en la hoja.");
       if (typeof i.etiqueta !== "number" || i.etiqueta < 0) return toast("Falta 'Etiqueta' en la hoja.");
 
       const cells = [];
+      const current = (row.etiqueta || "").trim();
 
-      if (makeOwner) {
-        const name = (prompt("Nombre de la etiqueta:", row.etiqueta || "") || "").trim();
-        if (!name) return;
+      // quitar marca de madre en la propia fila
+      cells.push({ rowNumber: row._row, colIndex0: i.etqMadre, value: "" });
 
-        let color = normColor(prompt(
-          "Color (violeta, rosa, verde-oscuro, verde-claro, naranja):",
-          row.etqColor || "violeta"
-        ) || "violeta");
-        if (!LABEL_PALETTE[color]) color = "violeta";
-
-        // colisión de dueña con mismo nombre
-        const clash = labelsAll.find(l => l.name === name && l.ownerId !== row.id);
-        if (clash) return toast(`Ya existe etiqueta "${name}" definida por ${clash.ownerId}.`);
-
-        cells.push({ rowNumber: row._row, colIndex0: i.etqMadre, value: "Sí" });
-        cells.push({ rowNumber: row._row, colIndex0: i.etiqueta, value: name });
-        if (typeof i.etqColor === "number" && i.etqColor >= 0) {
-          cells.push({ rowNumber: row._row, colIndex0: i.etqColor, value: color });
-        }
-        await writeCells(cells);
-
-        setRows(prev => prev.map(x => x.id===row.id ? { ...x, etqMadre:"Sí", etiqueta:name, etqColor:color } : x));
-        toast("Etiqueta creada ✓");
-      } else {
-        // quitar dueña y BORRAR esa etiqueta en todas las filas
-        const current = (row.etiqueta || "").trim();
-        cells.push({ rowNumber: row._row, colIndex0: i.etqMadre, value: "" });
-        if (current) {
-          for (const r of rows) {
-            if ((r.etiqueta || "").trim() === current) {
-              const ci = r._colIndex;
-              if (typeof ci.etiqueta === "number" && ci.etiqueta >= 0) {
-                cells.push({ rowNumber: r._row, colIndex0: ci.etiqueta, value: "" });
-              }
-              if (typeof ci.etqColor === "number" && ci.etqColor >= 0) {
-                cells.push({ rowNumber: r._row, colIndex0: ci.etqColor, value: "" });
-              }
+      // borrar etiqueta en todas las filas que la usen
+      if (current) {
+        for (const r of rows) {
+          if ((r.etiqueta || "").trim() === current) {
+            const ci = r._colIndex;
+            if (typeof ci.etiqueta === "number" && ci.etiqueta >= 0) {
+              cells.push({ rowNumber: r._row, colIndex0: ci.etiqueta, value: "" });
+            }
+            if (typeof ci.etqColor === "number" && ci.etqColor >= 0) {
+              cells.push({ rowNumber: r._row, colIndex0: ci.etqColor, value: "" });
             }
           }
         }
-        await writeCells(cells);
-
-        setRows(prev => prev.map(r => {
-          if (r.id === row.id) return { ...r, etqMadre:"", etiqueta:"", etqColor:"" };
-          if ((r.etiqueta || "").trim() === current) return { ...r, etiqueta:"", etqColor:r.etqColor };
-          return r;
-        }));
-        toast("Etiqueta eliminada y desasignada de sus filas ✓");
       }
+
+      await writeCells(cells);
+
+      setRows(prev => prev.map(r => {
+        if (r.id === row.id) return { ...r, etqMadre:"", etiqueta:"", etqColor:"" };
+        if ((r.etiqueta || "").trim() === current) return { ...r, etiqueta:"", etqColor:r.etqColor };
+        return r;
+      }));
+      toast("Etiqueta eliminada y desasignada de sus filas ✓");
     } catch (e) {
       console.error(e);
       toast("No pude actualizar la etiqueta.");
@@ -470,11 +522,11 @@ export default function ProgresoTable() {
   }
 
   return (
-    <div className="rounded-2xl border-2 border-[#398FFF] bg-white overflow-hidden">
+    <div className="rounded-2xl border-2 border-[#398FFF] bg-white overflow-hidden relative">
       {/* Header */}
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between px-4 py-3 border-b-2 border-[#398FFF]">
         <div className="font-semibold">Casos en Progreso</div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* selector de dataset */}
           <div className="inline-flex rounded-xl border-2 overflow-hidden border-[#398FFF]">
             <button
@@ -488,6 +540,13 @@ export default function ProgresoTable() {
               title='Ver "Pedido de cambio"'
             >Evolutivos</button>
           </div>
+
+          <button
+            onClick={() => setShowHiddenCols(v => !v)}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border-2 border-slate-400 text-slate-600 hover:bg-slate-50 text-xs md:text-sm"
+          >
+            {showHiddenCols ? "Ocultar columnas ocultas" : "Mostrar columnas ocultas"}
+          </button>
 
           <button onClick={clearFilters} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border-2" style={{ borderColor:"#fd006e", color:"#fd006e" }}>
             <XCircle className="w-4 h-4" /> Limpiar filtros
@@ -510,11 +569,11 @@ export default function ProgresoTable() {
         <div className="flex flex-wrap items-center gap-4 text-xs">
           <span className="inline-flex items-center gap-2">
             <span className="inline-block w-4 h-4 rounded-sm" style={{ background: MARKS.amarillo.bg, outline:`2px solid ${MARKS.amarillo.border}` }} />
-            Amarillo = Pruebas de Usuario
+            {MARKS.amarillo.label}
           </span>
           <span className="inline-flex items-center gap-2">
             <span className="inline-block w-4 h-4 rounded-sm" style={{ background: MARKS.celeste.bg, outline:`2px solid ${MARKS.celeste.border}` }} />
-            Celeste = Implementación
+            {MARKS.celeste.label}
           </span>
           <span className="inline-flex items-center gap-2">
             <span className="inline-block w-4 h-4 rounded-sm" style={{ background: "#fff", outline:`2px solid #7E57C2` }} />
@@ -524,114 +583,142 @@ export default function ProgresoTable() {
         <div className="mt-3 text-sm">Seleccioná una fila para ver acciones rápidas.</div>
       </div>
 
-      {/* 🔹 Barra superior de acciones para la fila seleccionada */}
-      {selectedId && (
-        (() => {
-          const selectedRow = rows.find(x => x.id === selectedId);
-          if (!selectedRow) return null;
-          const labelStyle = getLabelStyle(selectedRow.etiqueta);
-          return (
-            <div className="px-4 py-3 border-b bg-slate-50 flex flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap">
-              <div className="text-sm">
-                Fila seleccionada: <span className="font-medium">{selectedRow.id}</span>
-                {selectedRow.etiqueta && (
-                  <span
-                    className="ml-2 text-xs px-2 py-0.5 rounded-full"
-                    style={{
-                      background: labelStyle?.bg, color: labelStyle?.text, border:`1px solid ${labelStyle?.border}`
-                    }}
-                  >{selectedRow.etiqueta}</span>
-                )}
-              </div>
-
-              {/* marca */}
-              <button onClick={()=>markRow(selectedRow, "amarillo")} className="px-3 py-1.5 rounded-lg border-2" style={{ borderColor: MARKS.amarillo.border, color: MARKS.amarillo.border }}>
-                Marcar Amarillo
-              </button>
-              <button onClick={()=>markRow(selectedRow, "celeste")} className="px-3 py-1.5 rounded-lg border-2" style={{ borderColor: MARKS.celeste.border, color: MARKS.celeste.border }}>
-                Marcar Celeste
-              </button>
-              <button onClick={()=>markRow(selectedRow, "")} className="px-3 py-1.5 rounded-lg border-2 border-neutral-400 text-neutral-600">
-                Quitar marca
-              </button>
-
-              {/* Etiqueta madre */}
-              {!isTrue(selectedRow.etqMadre) ? (
-                <button
-                  onClick={()=>setLabelOwner(selectedRow, true)}
-                  className="px-3 py-1.5 rounded-lg border-2"
-                  style={{ borderColor: "#7E57C2", color: "#7E57C2" }}
-                >
-                  Crear Etiqueta (madre)
-                </button>
-              ) : (
-                <button
-                  onClick={()=>setLabelOwner(selectedRow, false)}
-                  className="px-3 py-1.5 rounded-lg border-2"
-                  style={{ borderColor: "#7E57C2", color: "#7E57C2" }}
-                >
-                  Quitar Etiqueta (borra hijas)
-                </button>
-              )}
-
-              {/* asignar a etiqueta */}
-              {!isTrue(selectedRow.etqMadre) && (
-                <>
-                  {assignRowId === selectedRow.id ? (
-                    <>
-                      <select
-                        className="border rounded-lg px-2 py-1"
-                        value={assignTo}
-                        onChange={(e)=>setAssignTo(e.target.value)}
-                      >
-                        <option value="">Seleccionar etiqueta…</option>
-                        {labelsAll.map(l => (
-                          <option key={l.name} value={l.name}>{l.name}</option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={()=> assignToLabel(selectedRow, assignTo)}
-                        className="px-3 py-1.5 rounded-lg border-2"
-                        style={{ borderColor: "#7E57C2", color: "#7E57C2" }}
-                        disabled={!assignTo}
-                      >
-                        Asignar
-                      </button>
-                      <button
-                        onClick={()=>{ setAssignRowId(null); setAssignTo(""); }}
-                        className="px-3 py-1.5 rounded-lg border-2 border-neutral-400 text-neutral-600"
-                      >
-                        Cancelar
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      onClick={()=>{
-                        if (labelsAll.length === 0) return toast("Primero creá al menos una etiqueta (madre).");
-                        setAssignRowId(selectedRow.id);
-                        setAssignTo("");
-                      }}
-                      className="px-3 py-1.5 rounded-lg border-2"
-                      style={{ borderColor: "#7E57C2", color: "#7E57C2" }}
-                    >
-                      Asignar a Etiqueta
-                    </button>
-                  )}
-
-                  {String(selectedRow.etiqueta || "").trim() && (
-                    <button
-                      onClick={()=>clearLabel(selectedRow)}
-                      className="px-3 py-1.5 rounded-lg border-2 border-neutral-400 text-neutral-600"
-                    >
-                      Quitar etiqueta
-                    </button>
-                  )}
-                </>
+      {/* Barra superior de acciones para la fila seleccionada */}
+      {selectedId && (() => {
+        const rowSel = rows.find(x => x.id === selectedId);
+        if (!rowSel) return null;
+        const labelStyle = getLabelStyle(rowSel.etiqueta);
+        return (
+          <div className="px-4 py-3 border-b bg-slate-50 flex flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap">
+            <div className="text-sm">
+              Fila seleccionada: <span className="font-medium">{rowSel.id}</span>
+              {rowSel.etiqueta && (
+                <span
+                  className="ml-2 text-xs px-2 py-0.5 rounded-full"
+                  style={{
+                    background: labelStyle?.bg, color: labelStyle?.text, border:`1px solid ${labelStyle?.border}`
+                  }}
+                >{rowSel.etiqueta}</span>
               )}
             </div>
-          );
-        })()
-      )}
+
+            {/* marca */}
+            <button
+              onClick={()=>markRow(rowSel, "amarillo")}
+              className="px-3 py-1.5 rounded-lg border-2"
+              style={{ borderColor: MARKS.amarillo.border, color: MARKS.amarillo.border }}
+            >
+              {MARKS.amarillo.label}
+            </button>
+            <button
+              onClick={()=>markRow(rowSel, "celeste")}
+              className="px-3 py-1.5 rounded-lg border-2"
+              style={{ borderColor: MARKS.celeste.border, color: MARKS.celeste.border }}
+            >
+              {MARKS.celeste.label}
+            </button>
+            <button
+              onClick={()=>markRow(rowSel, "")}
+              className="px-3 py-1.5 rounded-lg border-2 border-neutral-400 text-neutral-600"
+            >
+              Quitar marca
+            </button>
+
+            {/* Escalamiento */}
+            <button
+              onClick={()=>toggleEscalamiento(rowSel)}
+              className="px-3 py-1.5 rounded-lg border-2 border-amber-700 text-amber-700"
+            >
+              {String(rowSel.escalamiento || "").trim() === "Posible N3"
+                ? "Quitar posible N3"
+                : "Marcar posible N3"}
+            </button>
+
+            {/* Etiqueta madre */}
+            {!isTrue(rowSel.etqMadre) ? (
+              <button
+                onClick={()=>{
+                  const currentName = (rowSel.etiqueta || "").trim();
+                  const currentKey = LABEL_PALETTE[normColor(rowSel.etqColor || "")] ? normColor(rowSel.etqColor) : "violeta";
+                  setLabelModal({
+                    open:true,
+                    row: rowSel,
+                    name: currentName,
+                    colorKey: currentKey,
+                  });
+                }}
+                className="px-3 py-1.5 rounded-lg border-2"
+                style={{ borderColor: "#7E57C2", color: "#7E57C2" }}
+              >
+                Crear Etiqueta (madre)
+              </button>
+            ) : (
+              <button
+                onClick={()=>removeLabelOwner(rowSel)}
+                className="px-3 py-1.5 rounded-lg border-2"
+                style={{ borderColor: "#7E57C2", color: "#7E57C2" }}
+              >
+                Quitar Etiqueta (borra hijas)
+              </button>
+            )}
+
+            {/* asignar a etiqueta */}
+            {!isTrue(rowSel.etqMadre) && (
+              <>
+                {assignRowId === rowSel.id ? (
+                  <>
+                    <select
+                      className="border rounded-lg px-2 py-1"
+                      value={assignTo}
+                      onChange={(e)=>setAssignTo(e.target.value)}
+                    >
+                      <option value="">Seleccionar etiqueta…</option>
+                      {labelsAll.map(l => (
+                        <option key={l.name} value={l.name}>{l.name}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={()=> assignToLabel(rowSel, assignTo)}
+                      className="px-3 py-1.5 rounded-lg border-2"
+                      style={{ borderColor: "#7E57C2", color: "#7E57C2" }}
+                      disabled={!assignTo}
+                    >
+                      Asignar
+                    </button>
+                    <button
+                      onClick={()=>{ setAssignRowId(null); setAssignTo(""); }}
+                      className="px-3 py-1.5 rounded-lg border-2 border-neutral-400 text-neutral-600"
+                    >
+                      Cancelar
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={()=>{
+                      if (labelsAll.length === 0) return toast("Primero creá al menos una etiqueta (madre).");
+                      setAssignRowId(rowSel.id);
+                      setAssignTo("");
+                    }}
+                    className="px-3 py-1.5 rounded-lg border-2"
+                    style={{ borderColor: "#7E57C2", color: "#7E57C2" }}
+                  >
+                    Asignar a Etiqueta
+                  </button>
+                )}
+
+                {String(rowSel.etiqueta || "").trim() && (
+                  <button
+                    onClick={()=>clearLabel(rowSel)}
+                    className="px-3 py-1.5 rounded-lg border-2 border-neutral-400 text-neutral-600"
+                  >
+                    Quitar etiqueta
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Filtros — SIN "Tipo" */}
       <div className="px-4 py-3 border-b grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -685,17 +772,25 @@ export default function ProgresoTable() {
             <tr>
               <th className="px-3 py-1 text-xs font-semibold uppercase">Nro</th>
               <th className="px-3 py-1 text-xs font-semibold uppercase">Asunto</th>
-              <th className="px-3 py-1 text-xs font-semibold uppercase">Usuario</th>
-              <th className="px-3 py-1 text-xs font-semibold uppercase">Fecha de creación</th>
+              {showHiddenCols && (
+                <th className="px-3 py-1 text-xs font-semibold uppercase">Usuario</th>
+              )}
+              {showHiddenCols && (
+                <th className="px-3 py-1 text-xs font-semibold uppercase">Fecha de creación</th>
+              )}
               <th className="px-3 py-1 text-xs font-semibold uppercase">Aging</th>
               <th className="px-3 py-1 text-xs font-semibold uppercase">Prioridad</th>
               <th className="px-3 py-1 text-xs font-semibold uppercase">Estado</th>
               <th className="px-3 py-1 text-xs font-semibold uppercase">Mesa</th>
               <th className="px-3 py-1 text-xs font-semibold uppercase">Agente asignado</th>
-              <th className="px-3 py-1 text-xs font-semibold uppercase">Módulo</th>
-              {/* NO mostramos Tipo */}
+              {showHiddenCols && (
+                <th className="px-3 py-1 text-xs font-semibold uppercase">Módulo</th>
+              )}
+              <th className="px-3 py-1 text-xs font-semibold uppercase">Escalamiento</th>
               <th className="px-3 py-1 text-xs font-semibold uppercase">Ticket N3</th>
-              <th className="px-3 py-1 text-xs font-semibold uppercase">Comentario</th>
+              {showHiddenCols && (
+                <th className="px-3 py-1 text-xs font-semibold uppercase">Comentario</th>
+              )}
               <th className="px-3 py-1 text-xs font-semibold uppercase">Acciones</th>
             </tr>
           </thead>
@@ -730,14 +825,29 @@ export default function ProgresoTable() {
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-1 align-middle">{r.usuario}</td>
-                  <td className="px-3 py-1 align-middle">{r.fecha}</td>
+
+                  {showHiddenCols && (
+                    <td className="px-3 py-1 align-middle">{r.usuario}</td>
+                  )}
+                  {showHiddenCols && (
+                    <td className="px-3 py-1 align-middle">{r.fecha}</td>
+                  )}
+
                   <td className="px-3 py-1 align-middle">{r.aging}</td>
                   <td className="px-3 py-1 align-middle">{r.prioridad}</td>
                   <td className="px-3 py-1 align-middle">{r.estado}</td>
                   <td className="px-3 py-1 align-middle">{r.mesa}</td>
                   <td className="px-3 py-1 align-middle">{r.agente}</td>
-                  <td className="px-3 py-1 align-middle">{r.modulo}</td>
+
+                  {showHiddenCols && (
+                    <td className="px-3 py-1 align-middle">{r.modulo}</td>
+                  )}
+
+                  <td className="px-3 py-1 align-middle">
+                    {String(r.escalamiento || "").trim() === "Posible N3"
+                      ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-amber-50 text-amber-800 border border-amber-600">Posible N3</span>
+                      : <span className="text-neutral-400">—</span>}
+                  </td>
 
                   <td className="px-3 py-1 align-middle">
                     {editId === r.id ? (
@@ -751,17 +861,19 @@ export default function ProgresoTable() {
                     ) : (r.ticketN3 || <span className="text-neutral-400">—</span>)}
                   </td>
 
-                  <td className="px-3 py-1 align-middle">
-                    {editId === r.id ? (
-                      <input
-                        className="w-64 rounded-md border px-2 py-1"
-                        value={draft.comentario}
-                        onChange={(e)=>setDraft(d => ({...d, comentario: e.target.value}))}
-                        onClick={(e)=>e.stopPropagation()}
-                        placeholder="Comentario…"
-                      />
-                    ) : (r.comentario || <span className="text-neutral-400">—</span>)}
-                  </td>
+                  {showHiddenCols && (
+                    <td className="px-3 py-1 align-middle">
+                      {editId === r.id ? (
+                        <input
+                          className="w-64 rounded-md border px-2 py-1"
+                          value={draft.comentario}
+                          onChange={(e)=>setDraft(d => ({...d, comentario: e.target.value}))}
+                          onClick={(e)=>e.stopPropagation()}
+                          placeholder="Comentario…"
+                        />
+                      ) : (r.comentario || <span className="text-neutral-400">—</span>)}
+                    </td>
+                  )}
 
                   <td className="px-3 py-1 align-middle whitespace-nowrap" onClick={(e)=>e.stopPropagation()}>
                     {editId === r.id ? (
@@ -780,20 +892,50 @@ export default function ProgresoTable() {
                         </button>
 
                         {/* Marca colores */}
-                        <button onClick={()=>markRow(r, "amarillo")} className="px-3 py-1.5 rounded-lg border-2" style={{ borderColor: MARKS.amarillo.border, color: MARKS.amarillo.border }}>
-                          Amarillo
+                        <button
+                          onClick={()=>markRow(r, "amarillo")}
+                          className="px-3 py-1.5 rounded-lg border-2"
+                          style={{ borderColor: MARKS.amarillo.border, color: MARKS.amarillo.border }}
+                        >
+                          {MARKS.amarillo.label}
                         </button>
-                        <button onClick={()=>markRow(r, "celeste")} className="px-3 py-1.5 rounded-lg border-2" style={{ borderColor: MARKS.celeste.border, color: MARKS.celeste.border }}>
-                          Celeste
+                        <button
+                          onClick={()=>markRow(r, "celeste")}
+                          className="px-3 py-1.5 rounded-lg border-2"
+                          style={{ borderColor: MARKS.celeste.border, color: MARKS.celeste.border }}
+                        >
+                          {MARKS.celeste.label}
                         </button>
-                        <button onClick={()=>markRow(r, "")} className="px-3 py-1.5 rounded-lg border-2 border-neutral-400 text-neutral-600">
+                        <button
+                          onClick={()=>markRow(r, "")}
+                          className="px-3 py-1.5 rounded-lg border-2 border-neutral-400 text-neutral-600"
+                        >
                           Quitar marca
+                        </button>
+
+                        {/* Escalamiento */}
+                        <button
+                          onClick={()=>toggleEscalamiento(r)}
+                          className="px-3 py-1.5 rounded-lg border-2 border-amber-700 text-amber-700"
+                        >
+                          {String(r.escalamiento || "").trim() === "Posible N3"
+                            ? "Quitar posible N3"
+                            : "Posible N3"}
                         </button>
 
                         {/* Etiqueta madre */}
                         {!isTrue(r.etqMadre) ? (
                           <button
-                            onClick={()=>setLabelOwner(r, true)}
+                            onClick={()=>{
+                              const currentName = (r.etiqueta || "").trim();
+                              const currentKey = LABEL_PALETTE[normColor(r.etqColor || "")] ? normColor(r.etqColor) : "violeta";
+                              setLabelModal({
+                                open:true,
+                                row: r,
+                                name: currentName,
+                                colorKey: currentKey,
+                              });
+                            }}
                             className="px-3 py-1.5 rounded-lg border-2"
                             style={{ borderColor: "#7E57C2", color: "#7E57C2" }}
                           >
@@ -801,7 +943,7 @@ export default function ProgresoTable() {
                           </button>
                         ) : (
                           <button
-                            onClick={()=>setLabelOwner(r, false)}
+                            onClick={()=>removeLabelOwner(r)}
                             className="px-3 py-1.5 rounded-lg border-2"
                             style={{ borderColor: "#7E57C2", color: "#7E57C2" }}
                           >
@@ -871,7 +1013,14 @@ export default function ProgresoTable() {
             })}
 
             {filtered.length === 0 && (
-              <tr><td colSpan={13} className="px-4 py-6 text-center text-sm">Sin resultados (ajustá filtros).</td></tr>
+              <tr>
+                <td
+                  colSpan={showHiddenCols ? 13 : 10}
+                  className="px-4 py-6 text-center text-sm"
+                >
+                  Sin resultados (ajustá filtros).
+                </td>
+              </tr>
             )}
           </tbody>
         </table>
@@ -924,6 +1073,88 @@ export default function ProgresoTable() {
           );
         })}
       </div>
+
+      {/* Modal de creación de etiqueta madre */}
+      {labelModal.open && labelModal.row && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40"
+          onClick={() => setLabelModal({ open:false, row:null, name:"", colorKey:"violeta" })}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl max-w-sm w-full mx-4 p-5"
+            onClick={(e)=>e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div className="font-semibold text-[#398FFF] text-sm">Crear etiqueta madre</div>
+              <button
+                onClick={() => setLabelModal({ open:false, row:null, name:"", colorKey:"violeta" })}
+                className="p-1 rounded hover:bg-slate-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="text-xs text-slate-600 mb-3">
+              Ticket: <span className="font-medium">{labelModal.row.id}</span> — {labelModal.row.asunto || "Sin asunto"}
+            </div>
+
+            <div className="mb-3">
+              <label className="text-xs font-medium block mb-1">Nombre de la etiqueta</label>
+              <input
+                className="w-full border rounded-lg px-2 py-1.5 text-sm"
+                value={labelModal.name}
+                onChange={(e)=>setLabelModal(m => ({ ...m, name: e.target.value }))}
+                placeholder="Ej: Ajustes facturación"
+              />
+            </div>
+
+            <div className="mb-4">
+              <label className="text-xs font-medium block mb-1">Color</label>
+              <select
+                className="w-full border rounded-lg px-2 py-1.5 text-sm"
+                value={labelModal.colorKey}
+                onChange={(e)=>setLabelModal(m => ({ ...m, colorKey: e.target.value }))}
+              >
+                {Object.keys(LABEL_PALETTE).map(key => (
+                  <option key={key} value={key}>{key}</option>
+                ))}
+              </select>
+              <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
+                <span
+                  className="inline-block w-4 h-4 rounded-sm border"
+                  style={{
+                    background: LABEL_PALETTE[labelModal.colorKey]?.bg,
+                    borderColor: LABEL_PALETTE[labelModal.colorKey]?.border,
+                  }}
+                />
+                Vista previa
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setLabelModal({ open:false, row:null, name:"", colorKey:"violeta" })}
+                className="px-3 py-1.5 rounded-lg border-2 border-neutral-400 text-neutral-600 text-sm"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  const nm = (labelModal.name || "").trim();
+                  if (!nm) return; // no crees nada si está vacío
+                  await createLabelOwner(labelModal.row, nm, labelModal.colorKey);
+                  setLabelModal({ open:false, row:null, name:"", colorKey:"violeta" });
+                }}
+                disabled={!labelModal.name.trim()}
+                className="px-3 py-1.5 rounded-lg border-2 text-sm"
+                style={{ borderColor:"#7E57C2", color: "#7E57C2" }}
+              >
+                Crear
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {msg && (
         <div className="m-3 rounded-2xl border-2 border-[#fd006e] text-[#fd006e] bg-white px-3 py-2 text-sm">
