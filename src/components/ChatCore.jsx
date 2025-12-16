@@ -73,24 +73,27 @@ export default function ChatCore() {
     }
   }
 
+  function handleClear() {
+    setMsgs([]);
+  }
+
   // ---------- render de texto con formato ----------
 
   function renderBotMessage(text) {
     const s = String(text || "");
 
-    // Heurística MUY simple: si arranca con "Nro:" lo tratamos como detalle de ticket
+    // si arranca con "Nro:" lo tratamos como detalle de ticket
     const isTicketReply = /^Nro:\s*/i.test(s);
 
     if (!isTicketReply) {
       // mensaje normal → respetar saltos de línea
-      return (
-        <span style={{ whiteSpace: "pre-line" }}>
-          {s}
-        </span>
-      );
+      return <span style={{ whiteSpace: "pre-line" }}>{s}</span>;
     }
 
-    const lines = s.split("\n").map((ln) => ln.trim()).filter(Boolean);
+    const lines = s
+      .split("\n")
+      .map((ln) => ln.trim())
+      .filter(Boolean);
 
     return (
       <div className="text-xs text-left">
@@ -102,7 +105,7 @@ export default function ChatCore() {
           const value = rest.join(":").trim();
 
           if (!value) {
-            // por si hay líneas tipo "Descripción:" o texto suelto
+            // líneas tipo "Descripción:" sola o texto raro
             return (
               <div key={idx} className="mt-2">
                 {ln}
@@ -154,27 +157,39 @@ export default function ChatCore() {
 
         {msgs.length === 0 && (
           <div className="text-slate-500 text-sm">
-            Probá:{" "}
-            <span className="font-medium">ticket 98532</span> o una frase como{" "}
+            Probá: <span className="font-medium">ticket 98532</span> o una frase como{" "}
             <span className="italic">"hablame sobre invgate 32322"</span>.
           </div>
         )}
       </div>
 
-      <form onSubmit={send} className="mt-3 flex gap-2">
-        <input
-          className="flex-1 border rounded-lg px-3 py-2"
-          placeholder="Escribí acá…"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-        />
-        <button
-          type="submit"
-          disabled={loading}
-          className="px-3 py-2 rounded-lg border text-[#398FFF] border-[#398FFF] hover:bg-[#398FFF] hover:text-white disabled:opacity-60"
-        >
-          {loading ? "..." : "Enviar"}
-        </button>
+      {/* Footer: input + botones */}
+      <form onSubmit={send} className="mt-3 flex flex-col gap-2">
+        <div className="flex gap-2">
+          <input
+            className="flex-1 border rounded-lg px-3 py-2"
+            placeholder="Escribí acá…"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className="px-3 py-2 rounded-lg border text-[#398FFF] border-[#398FFF] hover:bg-[#398FFF] hover:text-white disabled:opacity-60"
+          >
+            {loading ? "..." : "Enviar"}
+          </button>
+        </div>
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={handleClear}
+            disabled={loading || msgs.length === 0}
+            className="text-xs px-2 py-1 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100 disabled:opacity-40"
+          >
+            Limpiar chat
+          </button>
+        </div>
       </form>
     </div>
   );
