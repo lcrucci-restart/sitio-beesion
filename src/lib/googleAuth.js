@@ -1,9 +1,10 @@
 // src/lib/googleAuth.js
+
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 // Mantené SCOPES como **array**
 export const SCOPES = [
-  "https://www.googleapis.com/auth/spreadsheets",          // escritura Sheets ✅
+  "https://www.googleapis.com/auth/spreadsheets",          // escritura Sheets
   "https://www.googleapis.com/auth/spreadsheets.readonly",
   "https://www.googleapis.com/auth/drive.file",
   "https://www.googleapis.com/auth/drive.readonly",
@@ -19,6 +20,9 @@ let tokenClient = null;
 
 const STORAGE_KEY = "gdrive_oauth_token_v1";
 
+// para no intentar restaurar mil veces
+let restoredOnce = false;
+
 function persistToken() {
   try {
     if (accessToken && tokenExpiry) {
@@ -27,7 +31,9 @@ function persistToken() {
         JSON.stringify({ accessToken, tokenExpiry })
       );
     }
-  } catch {}
+  } catch {
+    // ignoramos errores de storage
+  }
 }
 
 export function restoreFromStorage() {
@@ -40,7 +46,9 @@ export function restoreFromStorage() {
       tokenExpiry = e;
       return true;
     }
-  } catch {}
+  } catch {
+    // si algo falla, devolvemos false y seguimos sin token
+  }
   return false;
 }
 
@@ -49,6 +57,7 @@ export function hasGoogle() {
 }
 
 export function isSignedIn() {
+  // bootstrapAuthFromStorage() ya intentó rehidratar al importar el módulo
   return !!accessToken && Date.now() < tokenExpiry;
 }
 
@@ -62,7 +71,7 @@ export function initTokenClient() {
 
   tokenClient = window.google.accounts.oauth2.initTokenClient({
     client_id: CLIENT_ID,
-    scope: SCOPES.join(" "), // <-- ahora sí .join() acá
+    scope: SCOPES.join(" "), // todos los scopes en un string
     // callback se setea dinámicamente
     callback: () => {},
   });
@@ -87,11 +96,12 @@ export async function ensureToken() {
         reject(new Error("No se obtuvo access_token"));
       }
     };
-    tokenClient.requestAccessToken({ prompt: "" }); // intenta sin prompt
+    // intenta sin prompt (silencioso si ya autorizaste antes)
+    tokenClient.requestAccessToken({ prompt: "" });
   });
 }
 
-// para “subir” scopes (mostrar consentimiento)
+// para “subir” scopes (mostrar consentimiento explícito)
 export function requestWriteScopes() {
   initTokenClient();
   return new Promise((resolve, reject) => {
@@ -100,13 +110,13 @@ export function requestWriteScopes() {
         accessToken = resp.access_token;
         const ttl = (resp.expires_in ?? 3600) - 60;
         tokenExpiry = Date.now() + ttl * 1000;
-        persistToken(); // <-- guardamos en la MISMA key
+        persistToken(); // guardamos en la misma key
         resolve(accessToken);
       } else {
         reject(new Error("No se obtuvo access_token"));
       }
     };
-    // Pedimos consent explícito con TODOS los scopes
+    // Pedimos consent con TODOS los scopes
     tokenClient.requestAccessToken({ prompt: "consent", scope: SCOPES.join(" ") });
   });
 }
@@ -116,13 +126,19 @@ export function revokeToken() {
     if (accessToken && window?.google?.accounts?.oauth2?.revoke) {
       window.google.accounts.oauth2.revoke(accessToken, () => {});
     }
-  } catch {}
+  } catch {
+    // ignoramos error de revoke
+  }
   accessToken = null;
   tokenExpiry = 0;
-  try { sessionStorage.removeItem(STORAGE_KEY); } catch {}
+  try {
+    sessionStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // ignoramos error de storage
+  }
 }
 
-// (opcional) consultar email del usuario para compartir la hoja
+// consultar info básica del usuario (email, nombre, etc.)
 export async function getUserInfo() {
   const t = getAccessToken();
   if (!t) return null;
@@ -133,3 +149,16 @@ export async function getUserInfo() {
   return r.json(); // { email, name, ... }
 }
 
+// ========= bootstrap automático =========
+
+// Rehidratar token automáticamente cuando se importa el módulo
+(function bootstrapAuthFromStorage() {
+  try {
+    if (!restoredOnce) {
+      restoredOnce = true;
+      restoreFromStorage();
+    }
+  } catch {
+    // si algo explota, seguimos sin token y listo
+  }
+})();
