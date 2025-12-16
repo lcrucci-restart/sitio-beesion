@@ -21,7 +21,7 @@ export default function ChatWidget() {
     sessionStorage.setItem("chat_open", open ? "1" : "0");
   }, [open]);
 
-  // altura inicial algo más cómoda
+  // altura inicial un poco más amable
   useEffect(() => {
     if (typeof window === "undefined") return;
     setSize((prev) => ({
@@ -29,8 +29,10 @@ export default function ChatWidget() {
     }));
   }, []);
 
-  // handlers de resize (solo desktop, panel dockeado)
+  // handlers de resize (solo aplica cuando NO está expandido)
   const handleResizeStart = (e) => {
+    if (expanded) return; // nada que hacer en modo modal
+
     e.preventDefault();
     e.stopPropagation();
     if (!panelRef.current) return;
@@ -92,6 +94,21 @@ export default function ChatWidget() {
     setExpanded(false);
   };
 
+  // clases diferentes según modo dockeado vs expandido
+  const containerClasses = expanded
+    ? // modal centrado
+      "fixed z-[60] inset-0 flex items-center justify-center pointer-events-none"
+    : // dockeado abajo a la derecha
+      "fixed z-[60] bottom-0 right-0 md:right-6 md:bottom-6 w-full md:w-[380px] pointer-events-none";
+
+  const panelClasses = expanded
+    ? "bg-white border border-slate-200 rounded-2xl shadow-2xl w-[95vw] max-w-4xl h-[85vh] flex flex-col pointer-events-auto"
+    : "bg-white border-t md:border border-slate-200 md:rounded-tl-2xl shadow-xl flex flex-col pointer-events-auto";
+
+  const panelStyle = expanded
+    ? {}
+    : { height: size.height };
+
   return (
     <>
       {/* Botón flotante */}
@@ -112,74 +129,39 @@ export default function ChatWidget() {
         />
       )}
 
-      {/* Panel dockeado (abajo derecha) */}
-      {open && !expanded && (
-        <div
-          ref={panelRef}
-          className="fixed z-[60] bottom-0 right-0 md:right-6 md:bottom-6 w-full md:w-[380px] bg-white border-t md:border border-slate-200 md:rounded-tl-2xl shadow-xl flex flex-col"
-          style={{ height: size.height }}
-          role="dialog"
-          aria-label="Asistente"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between border-b px-4 py-2">
-            <div className="font-semibold text-[#398FFF]">Asistente</div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleExpand}
-                className="hidden md:inline-flex text-xs px-2 py-1 rounded-lg border border-[#398FFF] text-[#398FFF] hover:bg-[#398FFF] hover:text-white"
-              >
-                Expandir
-              </button>
-              <button
-                onClick={handleClose}
-                className="p-1 rounded hover:bg-slate-100"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Contenido */}
-          <div className="flex-1 p-4 overflow-hidden">
-            <ChatCore />
-          </div>
-
-          {/* Handle de resize (solo desktop) */}
+      {/* Contenedor (único ChatCore adentro) */}
+      {open && (
+        <div className={containerClasses} aria-hidden={false}>
           <div
-            className="hidden md:flex items-center justify-start px-3 pb-2 text-[10px] text-slate-400 cursor-ns-resize select-none"
-            onMouseDown={handleResizeStart}
-            onTouchStart={handleResizeStart}
-          >
-            ⇕ Arrastrar para cambiar altura
-          </div>
-        </div>
-      )}
-
-      {/* Modal expandido (centrado) */}
-      {open && expanded && (
-        <div
-          className="fixed z-[70] inset-0 flex items-center justify-center pointer-events-none"
-          aria-hidden={false}
-        >
-          <div
-            className="bg-white border border-slate-200 rounded-2xl shadow-2xl w-[95vw] max-w-4xl h-[85vh] flex flex-col pointer-events-auto"
-            onClick={(e) => e.stopPropagation()}
+            ref={panelRef}
+            className={panelClasses}
+            style={panelStyle}
             role="dialog"
-            aria-label="Asistente expandido"
+            aria-label="Asistente"
+            onClick={(e) => e.stopPropagation()}
           >
+            {/* Header */}
             <div className="flex items-center justify-between border-b px-4 py-2">
               <div className="font-semibold text-[#398FFF]">
-                Asistente — vista expandida
+                {expanded ? "Asistente — vista expandida" : "Asistente"}
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={handleContract}
-                  className="text-xs px-2 py-1 rounded-lg border border-[#398FFF] text-[#398FFF] hover:bg-[#398FFF] hover:text-white"
-                >
-                  Contraer
-                </button>
+                {!expanded && (
+                  <button
+                    onClick={handleExpand}
+                    className="hidden md:inline-flex text-xs px-2 py-1 rounded-lg border border-[#398FFF] text-[#398FFF] hover:bg-[#398FFF] hover:text-white"
+                  >
+                    Expandir
+                  </button>
+                )}
+                {expanded && (
+                  <button
+                    onClick={handleContract}
+                    className="text-xs px-2 py-1 rounded-lg border border-[#398FFF] text-[#398FFF] hover:bg-[#398FFF] hover:text-white"
+                  >
+                    Contraer
+                  </button>
+                )}
                 <button
                   onClick={handleClose}
                   className="p-1 rounded hover:bg-slate-100"
@@ -188,9 +170,22 @@ export default function ChatWidget() {
                 </button>
               </div>
             </div>
+
+            {/* Contenido */}
             <div className="flex-1 p-4 overflow-hidden">
               <ChatCore />
             </div>
+
+            {/* Handle de resize (solo dockeado en desktop) */}
+            {!expanded && (
+              <div
+                className="hidden md:flex items-center justify-start px-3 pb-2 text-[10px] text-slate-400 cursor-ns-resize select-none"
+                onMouseDown={handleResizeStart}
+                onTouchStart={handleResizeStart}
+              >
+                ⇕ Arrastrar para cambiar altura
+              </div>
+            )}
           </div>
         </div>
       )}
