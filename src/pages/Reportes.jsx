@@ -563,10 +563,6 @@ const cerradosByView = useMemo(
           )}
         </div>
 
-        {dataset === "abiertos" && (
-          <GeminiInsights />
-        )}
-
         {/* ================== BLOQUES ================== */}
         {dataset === "cerrados" ? (
           <>
