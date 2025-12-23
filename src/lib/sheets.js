@@ -235,3 +235,23 @@ export async function readReporteCerrados() {
   const tab = ENV.REP_CERRADOS_TAB;     // "Reporte Cerrados"
   return readTable({ sheetId: id, tab, gid: ENV.REP_CERRADOS_GID, maxCols: 200, maxRows: 50000 });
 }
+
+// ===== Gemini (insights desde pestaña dedicada) =====
+export async function readGeminiInsights() {
+  // Usamos el mismo libro de Reportes
+  const id  = ENV.REP_ID || ENV.FALLBACK_SHEET_ID;
+  // Pestaña, configurable por env si querés
+  const tab = import.meta.env.VITE_GEMINI_TAB || "Gemini";
+
+  if (!id) {
+    throw new Error("[readGeminiInsights] Falta REP_ID o FALLBACK_SHEET_ID.");
+  }
+
+  return readTable({
+    sheetId: id,
+    tab,
+    maxCols: 20,
+    maxRows: 500,
+  });
+}
+

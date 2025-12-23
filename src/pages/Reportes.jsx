@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { hasGoogle, initTokenClient, ensureToken, isSignedIn } from "../lib/googleAuth";
 import { BarChart2 } from "lucide-react";
 import { readReporteAbiertos, readReporteCerrados } from "../lib/sheets";
+import GeminiInsights from "../components/GeminiInsights";
 
 /** ================== CONFIG ================== */
 
@@ -561,6 +562,10 @@ const cerradosByView = useMemo(
             </>
           )}
         </div>
+
+        {dataset === "abiertos" && (
+          <GeminiInsights />
+        )}
 
         {/* ================== BLOQUES ================== */}
         {dataset === "cerrados" ? (
