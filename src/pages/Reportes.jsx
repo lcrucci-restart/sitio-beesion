@@ -187,19 +187,37 @@ function VerticalBarChart({
         style={{ height, minWidth: Math.max(minInner, 320), gap: `${gap}px` }}
       >
         {rows.map(([name, count]) => {
-          const h = Math.round((count / max) * (height - 36)); // headroom para labels
+          // dejamos más margen para número arriba y label abajo
+          const h = Math.max(
+            4,
+            Math.round((count / max) * (height - 56)) // 56px aprox. para textos
+          );
+
           return (
             <div key={name} className="flex flex-col items-center">
+              {/* 🔼 Número arriba de la barra */}
+              {showValues && (
+                <div className="text-[10px] mb-1 leading-none">
+                  {count}
+                </div>
+              )}
+
+              {/* Barra */}
               <div
                 className="rounded-t"
                 style={{ width: barW, height: h, background: color }}
                 title={`${name}: ${count}`}
               />
-              {showValues && <div className="text-[10px] mt-1 leading-none">{count}</div>}
+
+              {/* Fecha / label abajo */}
               <div
-                className={`text-[10px] mt-1 leading-tight w-[80px] ${rotateLabels ? "origin-top-left -rotate-45 translate-y-2" : "truncate text-center w-[72px]"}`}
+                className={`text-[10px] mt-1 leading-tight w-[80px] ${
+                  rotateLabels
+                    ? "origin-top-left -rotate-45 translate-y-2"
+                    : "truncate text-center w-[72px]"
+                }`}
                 title={name}
-                style={{ whiteSpace: rotateLabels ? "nowrap" : "nowrap" }}
+                style={{ whiteSpace: "nowrap" }}
               >
                 {name}
               </div>
@@ -207,7 +225,9 @@ function VerticalBarChart({
           );
         })}
       </div>
-      {rows.length === 0 && <div className="text-sm text-slate-500">Sin datos</div>}
+      {rows.length === 0 && (
+        <div className="text-sm text-slate-500">Sin datos</div>
+      )}
     </div>
   );
 }
