@@ -1,6 +1,6 @@
 // src/components/N3CasesTable.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { RefreshCcw, Pencil, Save, X, XCircle } from "lucide-react";
+import { RefreshCcw, Save, XCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { hasGoogle, initTokenClient, ensureToken, isSignedIn } from "../lib/googleAuth";
 import { readTable, updateByKey } from "../lib/sheets";
 
@@ -32,14 +32,12 @@ export default function N3CasesTable() {
   const [fEstado, setFEstado]       = useState([]); // array strings
   const [fPrioridad, setFPrioridad] = useState([]);
 
-  // selección / edición
+  // filtros plegables
+  const [openEstadoFilter, setOpenEstadoFilter]       = useState(false);
+  const [openPrioridadFilter, setOpenPrioridadFilter] = useState(false);
+
+  // selección
   const [selectedId, setSelectedId] = useState(null);
-  const [editId, setEditId]         = useState(null);
-  const [draft, setDraft]           = useState({  // se editan estas 3 columnas
-    "Estado Heber": "",
-    "TIPO DE IMPACTO": "",
-    "IMPACTO OPERATIVO": ""
-  });
 
   const toast = (t) => { setMsg(t); setTimeout(()=>setMsg(null), 2400); };
 
@@ -84,33 +82,39 @@ export default function N3CasesTable() {
     return data;
   }, [rows, fEstado, fPrioridad]);
 
-  const clearFilters = () => { setFEstado([]); setFPrioridad([]); };
+  const clearFilters = () => {
+    setFEstado([]);
+    setFPrioridad([]);
+  };
   const toggleSel = (setter) => (value) => {
     setter(prev => prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]);
   };
 
-  // ---------- acciones de fila / edición ----------
-  const startEdit = (row) => {
-    setEditId(row[KEY]);
-    setDraft({
-      "Estado Heber": row["Estado Heber"] || "",
-      "TIPO DE IMPACTO": row["TIPO DE IMPACTO"] || "",
-      "IMPACTO OPERATIVO": row["IMPACTO OPERATIVO"] || ""
-    });
-  };
-  const cancelEdit = () => { setEditId(null); setDraft({ "Estado Heber":"", "TIPO DE IMPACTO":"", "IMPACTO OPERATIVO":"" }); };
-
-  const saveDraft = async (row) => {
+  // ---------- guardar fila ----------
+  const saveRow = async (row) => {
     try {
       const key = row[KEY];
-      await updateByKey(SHEET_TAB, KEY, [{ key, set: { ...draft } }], SHEET_ID);
-      // refresco local
-      setRows(prev => prev.map(r => r[KEY] === key ? { ...r, ...draft } : r));
-      cancelEdit();
+      await updateByKey(
+        SHEET_TAB,
+        KEY,
+        [{
+          key,
+          set: {
+            "Estado Heber": row["Estado Heber"] || "",
+            "TIPO DE IMPACTO": row["TIPO DE IMPACTO"] || "",
+            "IMPACTO OPERATIVO": row["IMPACTO OPERATIVO"] || "",
+          },
+        }],
+        SHEET_ID
+      );
       toast("Guardado en Sheets ✓");
-    } catch (e) { console.error(e); toast("No pude guardar. Revisá permisos."); }
+    } catch (e) {
+      console.error(e);
+      toast("No pude guardar. Revisá permisos.");
+    }
   };
 
+  // ---------- marca por fila ----------
   const markRow = async (row, kind /* "amarillo"|"celeste"|"" */) => {
     try {
       const key = row[KEY];
@@ -139,7 +143,11 @@ export default function N3CasesTable() {
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between px-4 py-3 border-b-2 border-[#398FFF]">
         <div className="font-semibold">Casos N3</div>
         <div className="flex items-center gap-2">
-          <button onClick={clearFilters} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border-2" style={{ borderColor:"#fd006e", color:"#fd006e" }}>
+          <button
+            onClick={clearFilters}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border-2"
+            style={{ borderColor:"#fd006e", color:"#fd006e" }}
+          >
             <XCircle className="w-4 h-4" /> Limpiar filtros
           </button>
           <button
@@ -149,7 +157,11 @@ export default function N3CasesTable() {
           >
             {collapsed ? "Expandir" : "Contraer"}
           </button>
-          <button onClick={load} disabled={loading} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 border-[#398FFF] text-[#398FFF] hover:bg-[#398FFF] hover:text-white">
+          <button
+            onClick={load}
+            disabled={loading}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 border-[#398FFF] text-[#398FFF] hover:bg-[#398FFF] hover:text-white"
+          >
             <RefreshCcw className="w-4 h-4" /> {loading ? "Actualizando..." : "Actualizar"}
           </button>
         </div>
@@ -160,18 +172,26 @@ export default function N3CasesTable() {
         <div className="text-sm font-medium mb-2">Referencias (marca por fila)</div>
         <div className="flex flex-wrap items-center gap-4 text-xs">
           <span className="inline-flex items-center gap-2">
-            <span className="inline-block w-4 h-4 rounded-sm" style={{ background: MARKS.amarillo.bg, outline:`2px solid ${MARKS.amarillo.border}` }} />
+            <span
+              className="inline-block w-4 h-4 rounded-sm"
+              style={{ background: MARKS.amarillo.bg, outline:`2px solid ${MARKS.amarillo.border}` }}
+            />
             Amarillo = En prueba
           </span>
           <span className="inline-flex items-center gap-2">
-            <span className="inline-block w-4 h-4 rounded-sm" style={{ background: MARKS.celeste.bg, outline:`2px solid ${MARKS.celeste.border}` }} />
+            <span
+              className="inline-block w-4 h-4 rounded-sm"
+              style={{ background: MARKS.celeste.bg, outline:`2px solid ${MARKS.celeste.border}` }}
+            />
             Celeste = Para implementar
           </span>
         </div>
 
         {selectedId && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <div className="text-sm">Fila seleccionada: <span className="font-medium">{selectedId}</span></div>
+            <div className="text-sm">
+              Fila seleccionada: <span className="font-medium">{selectedId}</span>
+            </div>
             <button
               onClick={()=>{
                 const r = rows.find(x=>x[KEY]===selectedId);
@@ -205,42 +225,72 @@ export default function N3CasesTable() {
         )}
       </div>
 
-      {/* Filtros (checkboxes) */}
+      {/* Filtros (checklist en listas plegables) */}
       <div className="px-4 py-3 border-b grid gap-4 md:grid-cols-2">
         {/* ESTADO */}
         <div>
-          <div className="text-sm font-medium mb-2">Estado</div>
-          <div className="rounded-lg border-2 p-2" style={{ borderColor:"#398FFF" }}>
-            {opcionesEstado.map(o => (
-              <label key={o} className="flex items-center gap-2 text-sm py-1">
-                <input
-                  type="checkbox"
-                  checked={fEstado.includes(o)}
-                  onChange={()=>toggleSel(setFEstado)(o)}
-                />
-                <span>{o}</span>
-              </label>
-            ))}
-            {opcionesEstado.length === 0 && <div className="text-xs text-slate-400">Sin opciones</div>}
-          </div>
+          <button
+            type="button"
+            onClick={() => setOpenEstadoFilter(v => !v)}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-lg border-2 text-sm"
+            style={{ borderColor:"#398FFF", color:"#398FFF" }}
+          >
+            <span className="font-medium">Estado</span>
+            <span className="flex items-center gap-2 text-xs text-slate-600">
+              {fEstado.length ? `${fEstado.length} seleccionado(s)` : "Todos"}
+              {openEstadoFilter ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </span>
+          </button>
+          {openEstadoFilter && (
+            <div className="mt-2 rounded-lg border-2 p-2" style={{ borderColor:"#398FFF" }}>
+              {opcionesEstado.map(o => (
+                <label key={o} className="flex items-center gap-2 text-sm py-1">
+                  <input
+                    type="checkbox"
+                    checked={fEstado.includes(o)}
+                    onChange={()=>toggleSel(setFEstado)(o)}
+                  />
+                  <span>{o}</span>
+                </label>
+              ))}
+              {opcionesEstado.length === 0 && (
+                <div className="text-xs text-slate-400">Sin opciones</div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* PRIORIDAD */}
         <div>
-          <div className="text-sm font-medium mb-2">Prioridad</div>
-          <div className="rounded-lg border-2 p-2" style={{ borderColor:"#398FFF" }}>
-            {opcionesPrioridad.map(o => (
-              <label key={o} className="flex items-center gap-2 text-sm py-1">
-                <input
-                  type="checkbox"
-                  checked={fPrioridad.includes(o)}
-                  onChange={()=>toggleSel(setFPrioridad)(o)}
-                />
-                <span>{o}</span>
-              </label>
-            ))}
-            {opcionesPrioridad.length === 0 && <div className="text-xs text-slate-400">Sin opciones</div>}
-          </div>
+          <button
+            type="button"
+            onClick={() => setOpenPrioridadFilter(v => !v)}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-lg border-2 text-sm"
+            style={{ borderColor:"#398FFF", color:"#398FFF" }}
+          >
+            <span className="font-medium">Prioridad</span>
+            <span className="flex items-center gap-2 text-xs text-slate-600">
+              {fPrioridad.length ? `${fPrioridad.length} seleccionado(s)` : "Todos"}
+              {openPrioridadFilter ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </span>
+          </button>
+          {openPrioridadFilter && (
+            <div className="mt-2 rounded-lg border-2 p-2" style={{ borderColor:"#398FFF" }}>
+              {opcionesPrioridad.map(o => (
+                <label key={o} className="flex items-center gap-2 text-sm py-1">
+                  <input
+                    type="checkbox"
+                    checked={fPrioridad.includes(o)}
+                    onChange={()=>toggleSel(setFPrioridad)(o)}
+                  />
+                  <span>{o}</span>
+                </label>
+              ))}
+              {opcionesPrioridad.length === 0 && (
+                <div className="text-xs text-slate-400">Sin opciones</div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -286,82 +336,73 @@ export default function N3CasesTable() {
 
                   {/* TIPO DE IMPACTO */}
                   <td className="px-3 py-2">
-                    {editId === r[KEY] ? (
-                      <input
-                        className="w-full rounded-md border-2 px-2 py-1"
-                        style={{ borderColor:"#398FFF" }}
-                        value={draft["TIPO DE IMPACTO"]}
-                        onChange={(e)=>setDraft(d => ({ ...d, "TIPO DE IMPACTO": e.target.value }))}
-                        onClick={(e)=>e.stopPropagation()}
-                        placeholder="Ej.: Alto / Medio / Bajo…"
-                      />
-                    ) : (
-                      r["TIPO DE IMPACTO"] ? r["TIPO DE IMPACTO"] : <span className="text-neutral-400">—</span>
-                    )}
+                    <input
+                      className="w-full rounded-md border-2 px-2 py-1"
+                      style={{ borderColor:"#398FFF" }}
+                      value={r["TIPO DE IMPACTO"] || ""}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        const id = r[KEY];
+                        setRows(prev =>
+                          prev.map(row =>
+                            row[KEY] === id ? { ...row, "TIPO DE IMPACTO": value } : row
+                          )
+                        );
+                      }}
+                      onClick={(e)=>e.stopPropagation()}
+                      placeholder="Ej.: Alto / Medio / Bajo…"
+                    />
                   </td>
 
                   {/* IMPACTO OPERATIVO */}
                   <td className="px-3 py-2">
-                    {editId === r[KEY] ? (
-                      <input
-                        className="w-full rounded-md border-2 px-2 py-1"
-                        style={{ borderColor:"#398FFF" }}
-                        value={draft["IMPACTO OPERATIVO"]}
-                        onChange={(e)=>setDraft(d => ({ ...d, "IMPACTO OPERATIVO": e.target.value }))}
-                        onClick={(e)=>e.stopPropagation()}
-                        placeholder="Descripción breve del impacto"
-                      />
-                    ) : (
-                      r["IMPACTO OPERATIVO"] ? r["IMPACTO OPERATIVO"] : <span className="text-neutral-400">—</span>
-                    )}
+                    <input
+                      className="w-full rounded-md border-2 px-2 py-1"
+                      style={{ borderColor:"#398FFF" }}
+                      value={r["IMPACTO OPERATIVO"] || ""}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        const id = r[KEY];
+                        setRows(prev =>
+                          prev.map(row =>
+                            row[KEY] === id ? { ...row, "IMPACTO OPERATIVO": value } : row
+                          )
+                        );
+                      }}
+                      onClick={(e)=>e.stopPropagation()}
+                      placeholder="Descripción breve del impacto"
+                    />
                   </td>
 
                   {/* ESTADO HEBER */}
                   <td className="px-3 py-2">
-                    {editId === r[KEY] ? (
-                      <input
-                        className="w-full rounded-md border-2 px-2 py-1"
-                        style={{ borderColor:"#398FFF" }}
-                        value={draft["Estado Heber"]}
-                        onChange={(e)=>setDraft(d => ({ ...d, "Estado Heber": e.target.value }))}
-                        onClick={(e)=>e.stopPropagation()}
-                        placeholder="Escribir libremente…"
-                      />
-                    ) : (
-                      r["Estado Heber"] ? r["Estado Heber"] : <span className="text-neutral-400">—</span>
-                    )}
+                    <input
+                      className="w-full rounded-md border-2 px-2 py-1"
+                      style={{ borderColor:"#398FFF" }}
+                      value={r["Estado Heber"] || ""}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        const id = r[KEY];
+                        setRows(prev =>
+                          prev.map(row =>
+                            row[KEY] === id ? { ...row, "Estado Heber": value } : row
+                          )
+                        );
+                      }}
+                      onClick={(e)=>e.stopPropagation()}
+                      placeholder="Escribir libremente…"
+                    />
                   </td>
 
                   {/* Acciones */}
                   <td className="px-3 py-2" onClick={(e)=>e.stopPropagation()}>
-                    {editId === r[KEY] ? (
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={()=>saveDraft(r)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-white"
-                          style={{ background:"#398FFF" }}
-                        >
-                          <Save className="w-4 h-4" /> Guardar
-                        </button>
-                        <button
-                          onClick={cancelEdit}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border-2"
-                          style={{ borderColor:"#fd006e", color:"#fd006e" }}
-                        >
-                          <X className="w-4 h-4" /> Cancelar
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={()=>startEdit(r)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border-2"
-                          style={{ borderColor:"#398FFF", color:"#398FFF" }}
-                        >
-                          <Pencil className="w-4 h-4" /> Editar
-                        </button>
-                      </div>
-                    )}
+                    <button
+                      onClick={() => saveRow(r)}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-white"
+                      style={{ background:"#398FFF" }}
+                    >
+                      <Save className="w-4 h-4" /> Guardar
+                    </button>
                   </td>
                 </tr>
               );
@@ -369,7 +410,7 @@ export default function N3CasesTable() {
 
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-6 text-center text-sm">
+                <td colSpan={9} className="px-4 py-6 text-center text-sm">
                   Sin resultados (ajustá filtros).
                 </td>
               </tr>
@@ -386,6 +427,3 @@ export default function N3CasesTable() {
     </div>
   );
 }
-
-
-
